@@ -768,7 +768,7 @@ class SynchronizedFile:
     @staticmethod
     def load(fname = './sample_data/popoolation2/F37.sync'):
         print 'loading',fname
-        cols=pd.read_csv(fname.replace('.sync','.pops'), sep='\t', header=None, comment='#').iloc[0].apply(lambda x: map(int,x.split(','))).tolist()
+        cols=pd.read_csv(fname+'.pops', sep='\t', header=None, comment='#').iloc[0].apply(lambda x: map(int,x.split(','))).tolist()
         data=pd.read_csv(fname, sep='\t', header=None).set_index(range(3))
         data.columns=pd.MultiIndex.from_tuples(cols)
         data.index.names= ['CHROM', 'POS', 'REF']
