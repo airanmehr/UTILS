@@ -754,6 +754,7 @@ def get_overlapping_genes(chrom,region_st,region_end, hg="hg19"):
     return df.loc[c1&c2]['name2'].tolist()
 
 class SynchronizedFile:
+    @staticmethod
     def processSyncFileLine(x,dialellic=True):
         z = x.apply(lambda xx: pd.Series(xx.split(':'), index=['A', 'T', 'C', 'G', 'N', 'del'])).astype(float).iloc[:, :4]
         ref = x.name[-1]
@@ -778,6 +779,7 @@ class SynchronizedFile:
         data.index=data.index.droplevel('REF')
         return data
 
+    @staticmethod
     def changeCtoAlternateAndDampZeroReads(a):
         C = a.xs('C', level=2, axis=1).sort_index().sort_index(axis=1)
         D = a.xs('D', level=2, axis=1).sort_index().sort_index(axis=1)
