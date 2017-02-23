@@ -752,3 +752,39 @@ def get_overlapping_genes(chrom,region_st,region_end, hg="hg19"):
     c1 = df["chrom"] == "chr%s" % chrom
     c2 = ~ ((df["cdsStart"]>region_end)|(df["cdsEnd"]<region_st))
     return df.loc[c1&c2]['name2'].tolist()
+
+class SynchronizedFile:
+    def processSyncFileLine(x,dialellic=True):
+        z = x.apply(lambda xx: pd.Series(xx.split(':'), index=['A', 'T', 'C', 'G', 'N', 'del'])).astype(float).iloc[:, :4]
+        ref = x.name[-1]
+        alt = z.sum().sort_values()[-2:]
+        alt = alt[(alt.index != ref)].index[0]
+        if dialellic:   ## Alternate allele is everthing except reference
+            return pd.concat([z[ref].astype(int).rename('C'), (z.sum(1)).rename('D')], axis=1).stack()
+        else:           ## Alternate allele is the allele with the most reads
+            return pd.concat([z[ref].astype(int).rename('C'), (z[ref] + z[alt]).rename('D')], axis=1).stack()
+
+    @staticmethod
+    def load(fname = './sample_data/popoolation2/F37.sync'):
+        print 'loading',fname
+        cols=pd.read_csv(fname.replace('.sync','.pops'), sep='\t', header=None, comment='#').iloc[0].apply(lambda x: map(int,x.split(','))).tolist()
+        data=pd.read_csv(fname, sep='\t', header=None).set_index(range(3))
+        data.columns=pd.MultiIndex.from_tuples(cols)
+        data.index.names= ['CHROM', 'POS', 'REF']
+        data=data.sort_index().reorder_levels([1,0],axis=1).sort_index(axis=1)
+        data=data.apply(SynchronizedFile.processSyncFileLine,axis=1)
+        data.columns.names=['REP','GEN','READ']
+        data=SynchronizedFile.changeCtoAlternateAndDampZeroReads(data)
+        data.index=data.index.droplevel('REF')
+        return data
+
+    def changeCtoAlternateAndDampZeroReads(a):
+        C = a.xs('C', level=2, axis=1).sort_index().sort_index(axis=1)
+        D = a.xs('D', level=2, axis=1).sort_index().sort_index(axis=1)
+        C = D - C
+        if (D == 0).sum().sum():
+            C[D == 0] += 1
+            D[D == 0] += 2
+        C.columns = pd.MultiIndex.from_tuples([x + ('C',) for x in C.columns], names=C.columns.names + ['READ'])
+        D.columns = pd.MultiIndex.from_tuples([x + ('D',) for x in D.columns], names=D.columns.names + ['READ'])
+        return pd.concat([C, D], axis=1).sort_index(axis=1).sort_index()
