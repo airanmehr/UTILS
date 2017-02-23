@@ -195,7 +195,7 @@ def GenomeChromosomewise(df, candSNPs=None, genes=None, axes=None,outliers=None)
 
 def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray'], markerSize=20, ylim=None, show=True,
               std_th=None, top_k=None, cutoff=None, common=None, Outliers=None, shade=None, fig=None, ticksize=12,
-              sortedAlready=False,lw=1):
+              sortedAlready=False,lw=1,axes=None):
     def reset_index(x):
         if x is None: return None
         if 'CHROM' not in x.columns.values:
@@ -216,14 +216,16 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
     if not show:
         plt.ioff()
     from itertools import cycle
-    def plotOne(b, d, name, chroms,common,shade):
+    def plotOne(b, d, name, chroms,common,shade,ax):
         a = b.dropna()
         c = d.loc[a.index]
+        if ax is None:
+            ax=plt.gca()
         if shade is not None:
             for _ ,  row in shade.iterrows():
                 print row
-                plt.gca().fill_between([row.gstart, row.gend], a.min(), a.max(), color='b', alpha=0.4)
-        plt.scatter(a.index, a, s=markerSize, c=c, alpha=0.8, edgecolors='none')
+                ax.fill_between([row.gstart, row.gend], a.min(), a.max(), color='b', alpha=0.4)
+        ax.scatter(a.index, a, s=markerSize, c=c, alpha=0.8, edgecolors='none')
 
         outliers=None
         if Outliers is not None:
@@ -237,17 +239,17 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
         if outliers is not None:
             if len(outliers):
                 # if name != 'Number of SNPs':
-                plt.scatter(outliers.index, outliers, s=markerSize, c='r', alpha=0.8, edgecolors='none')
-                plt.axhline(outliers.min(), color='k', ls='--',lw=lw)
+                ax.scatter(outliers.index, outliers, s=markerSize, c='r', alpha=0.8, edgecolors='none')
+                ax.axhline(outliers.min(), color='k', ls='--',lw=lw)
 
 
         if common is not None:
             for ii in common.index: plt.axvline(ii,c='g',alpha=0.5)
 
-        plt.axis('tight');
-        plt.xlim(max(0,a.index[0]-10000), a.index[-1]);
-        setSize(plt.gca(),ticksize)
-        plt.ylabel(name, fontsize=ticksize * 1.5)
+        ax.axis('tight');
+        ax.set_xlim(max(0,a.index[0]-10000), a.index[-1]);
+        setSize(ax,ticksize)
+        ax.set_ylabel(name, fontsize=ticksize * 1.5)
 
         # plt.title('{} SNPs, {} are red.'.format(a.dropna().shape[0], outliers.shape[0]))
         if chroms.shape[0]>1:
@@ -278,11 +280,11 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
             shade['gend']+=+ chroms.offset.loc[shade.CHROM].values
     addGlobalPOSIndex(common, chroms);
     addGlobalPOSIndex(Outliers, chroms)
-    if fig is None:
-        fig = plt.figure(figsize=(20, columns.size * 4))
+    if fig is None and axes is None:
+        fig,axes=plt.subplots(columns.size, 1, sharex=True,figsize=(20, columns.size * 4));
+
     for i in range(columns.size):
-        plt.subplot(columns.size, 1, i+1);
-        plotOne(df[columns[i]], df.color, names[i], chroms,common, shade)
+        plotOne(df[columns[i]], df.color, names[i], chroms,common, shade,axes[i])
     plt.setp(plt.gca().get_xticklabels(), visible=True)
     xlabel='Chromosome'
     print chroms
