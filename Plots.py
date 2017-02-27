@@ -265,7 +265,6 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
     chroms['start']=df.groupby('CHROM').POS.min()
     chroms['mid'] = [x + y / 2 for x, y in zip(chroms.offset+chroms.start, chroms.len)]
     chroms['mid'] = [x + y / 2 for x, y in zip(chroms.offset+chroms.start, chroms.len)]
-    print
     df['color'] = chroms.color.loc[df.CHROM].values
     df['gpos'] = df.POS + chroms.offset.loc[df.CHROM].values
     df['color'] = chroms.color.loc[df.CHROM].values
@@ -275,19 +274,18 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
         shade['gstart']=shade.start #
         shade['gend']=shade.end #
         if chroms.shape[0]>1:
-            print shade
             shade['gstart']+= chroms.offset.loc[shade.CHROM].values
             shade['gend']+=+ chroms.offset.loc[shade.CHROM].values
     addGlobalPOSIndex(common, chroms);
     addGlobalPOSIndex(Outliers, chroms)
     if fig is None and axes is None:
         fig,axes=plt.subplots(columns.size, 1, sharex=True,figsize=(20, columns.size * 4));
-
+        if columns.size==1:
+            axes=[axes]
     for i in range(columns.size):
         plotOne(df[columns[i]], df.color, names[i], chroms,common, shade,axes[i])
     plt.setp(plt.gca().get_xticklabels(), visible=True)
     xlabel='Chromosome'
-    print chroms
     if chroms.shape[0]==1:xlabel+=' {}'.format(chroms.index[0])
     plt.xlabel(xlabel, size=ticksize * 1.5)
     plt.gcf().subplots_adjust(bottom=0.2)
