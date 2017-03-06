@@ -9,10 +9,10 @@ import pandas as pd
 import pylab as plt
 
 try:
-    #Models are loaded once.
-    from SFSelect.SFselect import sfselect,SVM,SVMXP
     from SFSelect import metaSVM
     sys.modules['metaSVM'] = metaSVM
+    #Models are loaded once.
+    from SFSelect.SFselect import sfselect,SVM,SVMXP
 except:
     SVM,SVMXP= None,None
 
