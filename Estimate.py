@@ -7,17 +7,14 @@ import sys
 import numpy as np
 import pandas as pd
 import pylab as plt
-from SFselect.SFselect import sfselect
 
 try:
+    #Models are loaded once.
+    from SFSelect.SFselect import sfselect,SVM,SVMXP
     from SFSelect import metaSVM
     sys.modules['metaSVM'] = metaSVM
-    svm = pd.read_pickle('/home/arya/bin/sfselect/SVMs/general_SVM_sp.pck')
 except:
-    svm = None
-
-
-svm = pd.read_pickle('/home/arya/bin/sfselect/SVMs/general_SVM_sp.pck')
+    SVM,SVMXP= None,None
 
 class Estimate:
     @staticmethod
@@ -95,7 +92,7 @@ class Estimate:
         return w
     @staticmethod
     def getEstimate(x=None,x_XP_pop=None, n=None, snp=None, method='all', bins=-1, normalizeTajimaD=True, averageResults=False,
-                    svm_model_sfselect=svm, fixedRangeHist=True, removeFixedSites=True, selectionPredictor=False):
+                    svm_model_sfselect=SVM, fixedRangeHist=True, removeFixedSites=True, selectionPredictor=False):
         """
         Compute different estimates either based on AF (x and n should be given) or SNP matrix (only SNP matrix suffices) 
         watterson: watterson's theta 
@@ -120,7 +117,7 @@ class Estimate:
             elif len(x.shape)==1: # if x is L-dim vector of AF
                 if method=='SFSelect':
                     if x_XP_pop is not None:
-                        svm_model_sfselect = pd.read_pickle('/home/arya/bin/sfselect/SVMs/general_SVM_xp.pck')
+                        svm_model_sfselect = SVMXP
                     return sfselect(x,neut_pop_freqs=x_XP_pop, svm=svm_model_sfselect,removeFixedSites=removeFixedSites)['score']
                 safs=Estimate.getSAFS(x=x, bins=bins, n=n, fixedRangeHist=fixedRangeHist,removeFixedSites=removeFixedSites)
         elif snp is not None:  # if SNP is given
