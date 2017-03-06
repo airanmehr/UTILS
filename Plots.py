@@ -5,8 +5,9 @@ import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import pylab as plt
-
 import seaborn as sns
+
+import Utils.Util as utl
 
 
 def setStyle(style="darkgrid", lw=2, fontscale=1, fontsize=10):
@@ -69,67 +70,6 @@ def getMarker(n, addDashed=True):
 
 mpl.rc('font', **{'family': 'serif', 'serif': ['Computer Modern'], 'size':30}) ;
 mpl.rc('text', usetex=True)
-class Manhattan:
-    @staticmethod
-    def David(df,fname=None,colors=['black','gray']):
-        from itertools import  cycle
-        def plotOne(a,c,name,chroms):
-            plt.scatter(a.index, a, s=2, c=c, alpha=0.8, edgecolors='none')
-            outliers=utl.findOutliers(a)
-            if len(outliers):
-                plt.scatter(outliers.index, outliers, s=2, c='r', alpha=0.8, edgecolors='none')
-            plt.axis('tight');plt.xlim(0, a.index[-1]);
-            plt.xticks([x for x in chroms.mid], [str(x) for x in chroms.index], rotation=-90, size=20);
-            # plt.ylim(ymin=0);
-            plt.ylabel(name)
-        chroms=pd.DataFrame(df.groupby('CHROM').POS.max()) +1000;chroms.columns=['len']
-        chroms['offset']=chroms.len.cumsum();chroms['offset'].iloc[1:]=chroms['offset'].iloc[:-1].values;chroms['offset'].iloc[0]=0
-        colors=cycle(colors)
-        chroms['color']=[colors.next() for i in range(chroms.shape[0])]
-        chroms['mid']=[x+y/2  for x,y in zip(chroms.offset,chroms.len)]
-        df['gpos']=df.POS+ chroms.offset.loc[df.CHROM].values
-        df['color']=chroms.color.loc[df.CHROM].values
-        df.set_index('gpos',inplace=True);df.sort_index(inplace=True)
-        plt.figure(figsize=(24,12));plt.subplot(3,1,1);plotOne(-df.tajimaD,df.color, '-D',chroms);plt.subplot(3,1,2);plotOne(-df.H,df.color, '-H',chroms);plt.subplot(3,1,3);plotOne(df.SFSelect, df.color,'SFSelect',chroms)
-        plt.xlabel('Chromosome')
-        if fname is not None:
-            plt.savefig(fname)
-
-    @staticmethod
-    def plotChromosome(DF, fname=None, colors=['black', 'gray'], markerSize=20, ylim=None, show=True, scale=3):
-        if not show:
-            plt.ioff()
-        if 'POS' not in DF.columns:
-            df=DF.reset_index()
-        else:
-            df=DF
-        def plotOne(b, d, name):
-            a = b.dropna()
-            c = d.loc[a.index]
-            plt.scatter(a.index, a, s=markerSize, c=c, alpha=0.8, edgecolors='none')
-            th = a.mean() + scale * a.std()
-            outliers = a[a > th]
-            # outliers=findOutliers(a)
-            if len(outliers):
-                plt.scatter(outliers.index, outliers, s=markerSize, c='r', alpha=0.8, edgecolors='none')
-                plt.axhline(th, color='blue')
-            plt.axis('tight');
-            # plt.xlim(0, a.index[-1]);
-            plt.ylabel(name)
-            # plt.setp(plt.gca().get_xticklabels(), visible=False)
-            if ylim is not None:    plt.ylim(ymin=ylim)
-
-        df['gpos'] = df.POS
-        df['color'] = 'gray'
-        df.set_index('gpos', inplace=True);
-        df.sort_index(inplace=True)
-        plt.figure(figsize=(24, 16), dpi=60);
-        # plt.subplot(3,1,1)
-        df.color='g'
-        plotOne(df.icol(1), df.color, 'COMALE')
-        df.color='b'
-        plotOne(df.icol(2), df.color, 'COMALE')
-
 
 def addGlobalPOSIndex(df,chroms):
     if df is not None:
@@ -348,7 +288,7 @@ def ManhattanChrom(df, fname=None, colors=['black', 'gray'], markerSize=20, ylim
         plt.ion()
 
 
-def TimeSeries(data, methodColumn=None, ax=None, fname=None, color='r', ci=1):
+def TimeSeries(data, methodColumn=None, ax=None, fname=None, color='r', ci=1,shade=[0,50],samplingTimes=None):
     """
     Args:
         data: a dataframe containing mu and st fields,
@@ -368,10 +308,12 @@ def TimeSeries(data, methodColumn=None, ax=None, fname=None, color='r', ci=1):
         # plt.gca().fill_between(df.index,  (df.mu+df.st).apply(lambda x:min(x,1)), (df.mu-df.st).apply(lambda x:max(x,0)), color=color, alpha=0.25)
         ax.fill_between(df.index.values.astype(int), (df.mu + ci * df.st), (df.mu - ci * df.st), color=color,
                         alpha=0.25)
-    ax.axvspan(0, 50, alpha=0.25, color='black')
-    #for i in [4,16,32,64,128,256,512]:
-     #   ax.axvline(i,color='k',ls='--',lw=0.5,alpha=0.5)
-    ax.set_xticks(np.append([50], plt.xticks()[0]))
+    if shade is not None:
+        ax.axvspan(shade[0], shade[1], alpha=0.25, color='black')
+        ax.set_xticks(np.append([50], plt.xticks()[0]))
+    if samplingTimes is  not None:
+        for t in samplingTimes:ax.axvline(t,color='k',ls='-',lw=0.5,alpha=0.5)
+
     mpl.rc('font', **{'family': 'serif', 'serif': ['Computer Modern'], 'size':26}) ;
     mpl.rc('text', usetex=True)
     if fname is not None:
@@ -510,15 +452,14 @@ def setTicks(df):
     plt.xlabel('')
 
 
-def savefig(name, dpi):
-    import popgen.Utils.Util as utl
+def savefig(name, dpi,path=utl.paperFiguresPath):
     # plt.tight_layout()
-    plt.savefig(utl.paperFiguresPath + name + '.pdf');
-    plt.savefig(utl.paperFiguresPath + name + '.tiff', dpi=dpi)
+    plt.savefig(path+ name + '.pdf');
+    plt.savefig(path+ name + '.tiff', dpi=dpi)
 
 
 def plotQuantile(df, kde):
-    from popgen.Utils import Util as utl
+    from Utils import Util as utl
     quantiles = np.sort(np.append(np.linspace(0.0, 1, 1000)[:-1], np.linspace(0.999, 1, 10)))
     qq = pd.concat([utl.getQantilePvalues(df.COMALE, kde, quantiles=quantiles),
                     utl.getQantilePvalues(df.COMALENC, kde, quantiles=quantiles)], axis=1);

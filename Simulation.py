@@ -9,7 +9,7 @@ import pandas as pd;
 np.set_printoptions(linewidth=140, precision=5, suppress=True)
 import subprocess, uuid, os,sys
 import pylab as plt
-import popgen.Utils.Util as utl
+import Utils.Util as utl
 stdout_old=sys.stdout;sys.stdout=open('/dev/null','w');import simuPOP as sim;sys.stdout=stdout_old # to avoid simuPop welcome message!
 
 def sig(x): return 1./(1+np.exp(-x));
@@ -403,7 +403,7 @@ class Simulation:
 
 
     def getLD(self,site=None,pos=None):
-        from popgen.Utils.Estimate import Estimate
+        from Utils import Estimate
         LD=Estimate.LD(self.H0, self.siteUnderSelection,measure='DPrime')
         if site is not None:
             return LD.iloc[site]

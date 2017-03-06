@@ -2,19 +2,22 @@
 Copyleft Oct 10, 2015 Arya Iranmehr, PhD Student, Bafna's Lab, UC San Diego,  Email: airanmehr@gmail.com
 '''
 
-import pandas as pd
-import numpy as np
-import pylab as plt
-from popgen.SFselect.SFselect import sfselect
 import sys
 
-try:
-    from popgen.SFselect import metaSVM;
+import numpy as np
+import pandas as pd
+import pylab as plt
+from SFselect.SFselect import sfselect
 
+try:
+    from SFSelect import metaSVM
     sys.modules['metaSVM'] = metaSVM
     svm = pd.read_pickle('/home/arya/bin/sfselect/SVMs/general_SVM_sp.pck')
 except:
     svm = None
+
+
+svm = pd.read_pickle('/home/arya/bin/sfselect/SVMs/general_SVM_sp.pck')
 
 class Estimate:
     @staticmethod
@@ -73,8 +76,9 @@ class Estimate:
         if name is not None:
             afs.name=name
         if normed:
-            return afs/afs.sum()
-        return (afs+pd.Series(0,range(1,n))).fillna(0)
+            return afs/float(afs.sum())
+        if bins==-1:afs=(afs+pd.Series(0,range(1,n))).fillna(0)
+        return  afs
     @staticmethod
     def plotSAFS(x,bins=10,n=None, fixedRangeHist=True,removeFixedSites=False):
         Estimate.getSAFS(x, bins=bins, n=n, fixedRangeHist=fixedRangeHist,removeFixedSites=removeFixedSites).plot(kind='bar',width=1,grid=True);plt.xlim([-0.5,bins-0.5])

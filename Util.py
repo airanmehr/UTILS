@@ -378,8 +378,11 @@ class BED:
             df.start = df.start.apply(lambda x: (x, 0)[x < 0])
             df['len'] = df.end - df.start
             return df.set_index('start')
-
-        df = regions.groupby(level=0).apply(lambda x: get_interval(x, padding)).reset_index().set_index('CHROM')
+        if 'start' not in regions.columns:
+            df = regions.groupby(level=0).apply(lambda x: get_interval(x, padding)).reset_index().set_index('CHROM')
+        else:
+            df=regions.copy(True)
+        df=df.reset_index().sort_values(['CHROM','start']).set_index('CHROM')
         df['name'] = range(df.shape[0])
         df.score = (df.score.round(3) * 1000)
         df = df.astype(int)
@@ -387,8 +390,9 @@ class BED:
         csv = \
         Popen(['bedtools', 'merge', '-scores', 'max', '-i'], stdout=PIPE, stdin=PIPE, stderr=STDOUT).communicate(input=csv)[
             0]
-        df = pd.DataFrame(map(lambda x: x.split(), csv.split('\n')),
-                          columns=['CHROM', 'start', 'end', 'score']).dropna().set_index('CHROM').astype(int)
+        df = pd.DataFrame(map(lambda x: x.split(), csv.split('\n')))
+        df.columns=['CHROM', 'start', 'end', 'score']
+        df=df.dropna().set_index('CHROM').astype(int)
         df.score /= 1000
         df['len'] = df.end - df.start
         return df
@@ -790,3 +794,16 @@ class SynchronizedFile:
         C.columns = pd.MultiIndex.from_tuples([x + ('C',) for x in C.columns], names=C.columns.names + ['READ'])
         D.columns = pd.MultiIndex.from_tuples([x + ('D',) for x in D.columns], names=D.columns.names + ['READ'])
         return pd.concat([C, D], axis=1).sort_index(axis=1).sort_index()
+
+def INT(x):
+    try: return int(x)
+    except: return x
+
+def mask(genome,CHROM=None,start=None,end=None,interval=None,pad=0,returnIndex=False):
+    if interval is not None: CHROM, start, end = interval.CHROM, interval.start, interval.end
+    start-=pad;end+=pad
+    if returnIndex:
+        return (genome.index.get_level_values('CHROM')==CHROM) & (genome.index.get_level_values('POS')>=start)&(genome.index.get_level_values('POS')<=end)
+    else:
+        tmp=genome.loc[CHROM]
+        return tmp[(tmp.index.get_level_values('POS')>=start)&(tmp.index.get_level_values('POS')<=end)]
