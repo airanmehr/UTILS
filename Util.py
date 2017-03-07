@@ -862,14 +862,14 @@ class VCF:
     def computeFreqsChromosome(CHROM,
                        fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
                        panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',winSize=100000):
+        CHROM=INT(CHROM)
         if CHROM == 'Y': fin=dataPath1000GP+'ALL.chr{}.phase3_integrated_v1b.20130502.genotypes.vcf.gz'
         if CHROM == 'X': fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v1b.20130502.genotypes.vcf.gz'
         import vcf
         L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs[str(CHROM)].length
-        L=10000
-        print CHROM,int(L/1e6)
-        return
-        a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,pandel=panel) for start in xrange(0,ceilto(L,winSize),winSize)]
+        print CHROM,int(L/1e6),'Mbp'
+        a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel) for start in xrange(0,ceilto(L,winSize),winSize)]
+        print a
         return pd.concat([x  for x in a if x is not None])
 
 
