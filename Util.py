@@ -22,6 +22,7 @@ home = os.path.expanduser('~') + '/'
 paperPath = home + 'workspace/timeseries_paper/'
 dataPath=home+'storage/Data/'
 dataPathDmel=dataPath+'Dmelanogaster/'
+dataPath1000GP=dataPath+'Human/20130502/ALL/'
 paperFiguresPath = paperPath + 'figures/'
 plotpath=home+'out/plots/';
 outpath=home+'out/';
@@ -807,3 +808,69 @@ def mask(genome,CHROM=None,start=None,end=None,interval=None,pad=0,returnIndex=F
     else:
         tmp=genome.loc[CHROM]
         return tmp[(tmp.index.get_level_values('POS')>=start)&(tmp.index.get_level_values('POS')<=end)]
+
+
+def getRegionPrameter(CHROM,start,end):
+    if start is not None and end is not None:CHROM='{}:{}-{}'.format(CHROM,start,end)
+    elif start is None and end is not None:CHROM='{}:-{}'.format(CHROM,end)
+    elif start is not None and end is None :CHROM='{}:{}-'.format(CHROM,start)
+    return CHROM
+
+from subprocess import Popen, PIPE, STDOUT
+class VCF:
+    @staticmethod
+    def header(fname):
+        cmd="zgrep -w '^#CHROM' -m1 {}".format(fname)
+        return Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].split('\n')[0].split()
+    @staticmethod
+    def headerSamples(fname):
+        return VCF.header(fname)[9:]
+
+    @staticmethod
+    def loadPanel(fname):
+        return  pd.read_table(fname,sep='\t').dropna(axis=1)
+
+    @staticmethod
+    def getDataframe(CHROM,start=None,end=None,
+                     fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
+                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',
+                     bcftools="/home/arya/bin/bcftools/bcftools"):
+        reg=getRegionPrameter(CHROM,start,end)
+        fin=fin.format(CHROM)
+        cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | tr '|' '\\t' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
+        csv=Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].split('\n')
+        panel=VCF.loadPanel(panel).set_index('sample')[['super_pop','pop']]
+        df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5)).astype(int)
+        #df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5))
+        df.index.names=['CHROM','POS', 'ID', 'REF', 'ALT']
+        cols=[]
+        f=lambda x: tuple(panel.loc[x].tolist())
+        for x in VCF.headerSamples(fin):cols+=[f(x)+( x,'A'),f(x)+(x,'B')]
+        df.columns=pd.MultiIndex.from_tuples(cols,names=['SPOP', 'POP', 'ID','HAP'])
+        return df
+
+    @staticmethod
+    def computeFreqs(CHROM,start=None,end=None,
+                     fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
+                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel'):
+        try:
+            a=VCF.getDataframe(CHROM,start,end,fin=fin,panel=panel)
+            return pd.concat([a.mean(1).rename('ALL'),a.groupby(level=0,axis=1).mean(),a.groupby(level=1,axis=1).mean()],1)
+        except:
+            return None
+    @staticmethod
+    def computeFreqsChromosome(CHROM,
+                       fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
+                       panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',winSize=100000):
+        if CHROM == 'Y': fin=dataPath1000GP+'ALL.chr{}.phase3_integrated_v1b.20130502.genotypes.vcf.gz'
+        if CHROM == 'X': fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v1b.20130502.genotypes.vcf.gz'
+        import vcf
+        L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs[str(CHROM)].length
+        L=10000
+        print CHROM,int(L/1e6)
+        return
+        a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,pandel=panel) for start in xrange(0,ceilto(L,winSize),winSize)]
+        return pd.concat([x  for x in a if x is not None])
+
+
+
