@@ -800,6 +800,18 @@ def INT(x):
     try: return int(x)
     except: return x
 
+def intIndex(df):
+    names=df.index.names
+    df=df.reset_index()
+    df[names]=df[names].applymap(INT)
+    return df.set_index(names).sort_index()
+
+def uniqIndex(df,keep=False,subset=['CHROM','POS']): #keep can be first,last,None
+    names=df.index.names
+    if subset is None: subset=names
+    return df.reset_index().drop_duplicates(subset=subset,keep=keep).set_index(names).sort_index()
+
+
 def mask(genome,CHROM=None,start=None,end=None,interval=None,pad=0,returnIndex=False):
     if interval is not None: CHROM, start, end = interval.CHROM, interval.start, interval.end
     start-=pad;end+=pad
@@ -827,7 +839,7 @@ class VCF:
         return VCF.header(fname)[9:]
 
     @staticmethod
-    def loadPanel(fname):
+    def loadPanel(fname=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel'):
         return  pd.read_table(fname,sep='\t').dropna(axis=1)
 
     @staticmethod
@@ -870,7 +882,7 @@ class VCF:
         print CHROM,int(L/1e6),'Mbp'
         a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel) for start in xrange(0,ceilto(L,winSize),winSize)]
         print a
-        return pd.concat([x  for x in a if x is not None])
+        return intIndex(uniqIndex(pd.concat([x  for x in a if x is not None]),subset=['CHROM','POS']))
 
 
 
