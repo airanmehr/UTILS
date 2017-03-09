@@ -164,6 +164,7 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
         if shade is not None:
             for _ ,  row in shade.iterrows():
                 ax.fill_between([row.gstart, row.gend], a.min(), a.max(), color='b', alpha=0.4)
+
         ax.scatter(a.index, a, s=markerSize, c=c, alpha=0.8, edgecolors='none')
 
         outliers=None
@@ -177,7 +178,6 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
             outliers = a[a > a.mean() + std_th * a.std()]
         if outliers is not None:
             if len(outliers):
-                # if name != 'Number of SNPs':
                 ax.scatter(outliers.index, outliers, s=markerSize, c='r', alpha=0.8, edgecolors='none')
                 ax.axhline(outliers.min(), color='k', ls='--',lw=lw)
 
@@ -213,6 +213,9 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
         if chroms.shape[0]>1:
             shade['gstart']+= chroms.offset.loc[shade.CHROM].values
             shade['gend']+=+ chroms.offset.loc[shade.CHROM].values
+        if 'name' in shade.columns:
+            shade.sort_values('gstart',ascending=False,inplace=True)
+            shade['ID']=range(1,shade.shape[0]+1)
     addGlobalPOSIndex(common, chroms);
     addGlobalPOSIndex(Outliers, chroms)
     if fig is None and axes is None:
