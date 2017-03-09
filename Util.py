@@ -112,7 +112,6 @@ def files(mypath):
     return [f for f in os.listdir(mypath) if os.path.isfile(os.path.join(mypath, f))]
 
 def mergeIntervals(data):
-    from subprocess import Popen, PIPE, STDOUT
     csv = data.to_csv(header=None, sep='\t', index=None)
     csv = \
     Popen(['bedtools', 'merge', '-scores', 'max', '-i'], stdout=PIPE, stdin=PIPE, stderr=STDOUT).communicate(input=csv)[
@@ -829,8 +828,14 @@ def getRegionPrameter(CHROM,start,end):
     elif start is not None and end is None :CHROM='{}:{}-'.format(CHROM,start)
     return CHROM
 
-from subprocess import Popen, PIPE, STDOUT
+
 class VCF:
+    @staticmethod
+    def getField(fname,field='POS'):
+        fields={'CHROM':1,'POS':2,'ID':3}
+        cmd="zgrep -v '#' {} | cut -f{}".format(fname,fields[field])
+        return pd.Series(Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].strip().split('\n')).astype(int)
+
     @staticmethod
     def header(fname):
         cmd="zgrep -w '^#CHROM' -m1 {}".format(fname)
@@ -854,7 +859,6 @@ class VCF:
         csv=Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].split('\n')
         panel=VCF.loadPanel(panel).set_index('sample')[['super_pop','pop']]
         df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5)).astype(int)
-        #df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5))
         df.index.names=['CHROM','POS', 'ID', 'REF', 'ALT']
         cols=[]
         f=lambda x: tuple(panel.loc[x].tolist())
@@ -884,6 +888,12 @@ class VCF:
         a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel) for start in xrange(0,ceilto(L,winSize),winSize)]
         print a
         return intIndex(uniqIndex(pd.concat([x  for x in a if x is not None]),subset=['CHROM','POS']))
-
-
+    @staticmethod
+    def createGeneticMap(VCFin, chrom,gmpath=dataPath+'Human/map/GRCh37/plink.chr{}.GRCh37.map'):
+        gm = pd.read_csv(gmpath.format(chrom), sep='\t', header=None,names=['CHROM','ID','GMAP','POS'])
+        df = pd.DataFrame(VCF.getField(VCFin).rename('POS'))
+        df['GMAP'] = np.interp(df['POS'].tolist(), gm['POS'].tolist(),gm['GMAP'].tolist())
+        df['CHROM']=chrom
+        df['ID']='.'
+        df[['CHROM','ID','GMAP','POS']].to_csv(VCFin+'.map',sep='\t',header=None)
 
