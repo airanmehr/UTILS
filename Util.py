@@ -18,6 +18,7 @@ except:
 
 def mkdir(path):
     if not os.path.exists(path): os.makedirs(path)
+parentdir=lambda path:os.path.abspath(os.path.join(path, os.pardir))
 home = os.path.expanduser('~') + '/'
 paperPath = home + 'workspace/timeseries_paper/'
 dataPath=home+'storage/Data/'

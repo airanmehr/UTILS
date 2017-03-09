@@ -163,7 +163,6 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
             ax=plt.gca()
         if shade is not None:
             for _ ,  row in shade.iterrows():
-                print row
                 ax.fill_between([row.gstart, row.gend], a.min(), a.max(), color='b', alpha=0.4)
         ax.scatter(a.index, a, s=markerSize, c=c, alpha=0.8, edgecolors='none')
 
@@ -190,8 +189,6 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
         ax.set_xlim(max(0,a.index[0]-10000), a.index[-1]);
         setSize(ax,ticksize)
         ax.set_ylabel(name, fontsize=ticksize * 1.5)
-
-        # plt.title('{} SNPs, {} are red.'.format(a.dropna().shape[0], outliers.shape[0]))
         if chroms.shape[0]>1:
             plt.xticks([x for x in chroms.mid], [str(x) for x in chroms.index], rotation=-90, fontsize=ticksize * 1.5)
         plt.setp(plt.gca().get_xticklabels(), visible=False)
@@ -238,54 +235,6 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
     return fig
 
 
-def ManhattanChrom(df, fname=None, colors=['black', 'gray'], markerSize=20, ylim=None, show=True, scale=3):
-    if not show:
-        plt.ioff()
-
-    def plotOne(b, d, name):
-        a = b.dropna()
-        c = d.loc[a.index]
-        plt.scatter(a.index, a, s=markerSize, c=c, alpha=0.8, edgecolors='none')
-        th = a.mean() + scale * a.std()
-        outliers = a[a > th]
-        # outliers=findOutliers(a)
-        if len(outliers):
-            plt.scatter(outliers.index, outliers, s=markerSize, c='r', alpha=0.8, edgecolors='none')
-            plt.axhline(th, color='blue')
-        plt.axis('tight');
-        # plt.xlim(0, a.index[-1]);
-        plt.ylabel(name)
-        plt.setp(plt.gca().get_xticklabels(), visible=False)
-        if ylim is not None:    plt.ylim(ymin=ylim)
-
-    df['gpos'] = df.POS
-    df['color'] = 'gray'
-    df.set_index('gpos', inplace=True);
-    # df.sort_index(inplace=True)
-    plt.figure(figsize=(24, 16), dpi=60);
-    try:
-        plt.subplot(6, 1, 1)
-        plotOne(df.lr, df.color, 'COMALE')
-        plt.subplot(6, 1, 2)
-        plotOne(df.s, df.color, 'S')
-        plt.subplot(6, 1, 3)
-        plotOne(-df.alt, df.color, r'-$\log(P_{Alternative})$')
-        plt.subplot(6, 1, 4)
-        plotOne(-df.null, df.color, r'-$\log(P_{Null})$')
-        plt.subplot(6, 1, 5)
-        plotOne(df.null - df.alt, df.color, r'-$\log(\frac{P_{Alternative}}{P_{Null}})$')
-        plt.subplot(6, 1, 6)
-        plotOne(df.m, df.color, 'M')
-        # plt.subplot(7,1,7)
-        # plotOne(df.snp,df.color, 'SNP',chroms)
-    except:
-        pass
-    plt.setp(plt.gca().get_xticklabels(), visible=True)
-    plt.xlabel('Chromosome')
-    if fname is not None:
-        plt.savefig(fname)
-    if not show:
-        plt.ion()
 
 
 def TimeSeries(data, methodColumn=None, ax=None, fname=None, color='r', ci=1,shade=[0,50],samplingTimes=None):
