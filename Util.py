@@ -851,19 +851,21 @@ class VCF:
     @staticmethod
     def getDataframe(CHROM,start=None,end=None,
                      fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
-                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',
                      bcftools="/home/arya/bin/bcftools/bcftools"):
+                     #panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',
         reg=getRegionPrameter(CHROM,start,end)
         fin=fin.format(CHROM)
         cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | tr '|' '\\t' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
         csv=Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].split('\n')
-        panel=VCF.loadPanel(panel).set_index('sample')[['super_pop','pop']]
         df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5)).astype(int)
         df.index.names=['CHROM','POS', 'ID', 'REF', 'ALT']
         cols=[]
-        f=lambda x: tuple(panel.loc[x].tolist())
-        for x in VCF.headerSamples(fin):cols+=[f(x)+( x,'A'),f(x)+(x,'B')]
-        df.columns=pd.MultiIndex.from_tuples(cols,names=['SPOP', 'POP', 'ID','HAP'])
+         #panel=VCF.loadPanel(panel).set_index('sample')[['super_pop','pop']]
+        #f=lambda x: tuple(panel.loc[x].tolist())
+        #for x in VCF.headerSamples(fin):cols+=[f(x)+( x,'A'),f(x)+(x,'B')]
+        #df.columns=pd.MultiIndex.from_tuples(cols,names=['SPOP', 'POP', 'ID','HAP'])
+        for x in VCF.headerSamples(fin):cols+=[( x,'A'),(x,'B')]
+        df.columns=pd.MultiIndex.from_tuples(cols,names=[ 'ID','HAP'])
         return df
 
     @staticmethod
@@ -895,5 +897,5 @@ class VCF:
         df['GMAP'] = np.interp(df['POS'].tolist(), gm['POS'].tolist(),gm['GMAP'].tolist())
         df['CHROM']=chrom
         df['ID']='.'
-        df[['CHROM','ID','GMAP','POS']].to_csv(VCFin+'.map',sep='\t',header=None)
+        df[['CHROM','ID','GMAP','POS']].to_csv(VCFin+'.map',sep='\t',header=None,index=None)
 
