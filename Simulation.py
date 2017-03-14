@@ -21,78 +21,7 @@ a='';
 def fff(msg):
     global a
     a += msg
-#mpl.rc('font', **{'family': 'serif', 'serif': ['Computer Modern'], 'size':10}) ;    mpl.rc('text', usetex=True)
-def MSMSSelection(msms, Ne, n, numReplicates, theta, rho, window_size, s, origin_count, posUnderSelection, gens, path):
-    seed = ''
-    for ii, gen in enumerate(gens):
-        fname = path + '{}.msms'.format(int(gen))
-        if (not ii) and s != 0:
-            # while (nu0 < 0.95) or (nu0 > 0.99):
-            cmd = "{} -N {} -ms {} {} -t {} -r {} {:.0f} -SAA {} -SaA {} -SI {} 1 {} -Sp {} -oOC -Smark -oFP 0.000000000000E00 {}  -SForceKeep -SFC   -oTW  >{}".format(
-                    msms, Ne, n, numReplicates, theta, rho, window_size, 2 * Ne * s, Ne * s, gen / (4. * Ne),
-                                                                         origin_count / Ne,
-                    posUnderSelection, ('-seed {}'.format(seed), '')[seed is ''], fname)
-            os.system(cmd)
-        else:
-            cmd = "{} -N {} -ms {} {} -t {} -r {} {:.0f} -SAA {} -SaA {} -SI {} 1 {} -Sp {} -oOC -Smark -oFP 0.000000000000E00 {}  -SFC -SForceKeep  -oTW  >{}".format(
-                    msms, Ne, n, numReplicates, theta, rho, window_size, 2 * Ne * s, Ne * s, gen / (4. * Ne),
-                                                                         origin_count / Ne,
-                    posUnderSelection, ('-seed {}'.format(seed), '')[seed is ''], fname)
-            os.system(cmd)
-        if not ii: seed = MSMS.getSeed(fname)
 
-
-def MSMSSelectionFinale(msms, Ne, n, numReplicates, theta, rho, window_size, s, origin_count, posUnderSelection, gens,
-                        path):
-    seed = ''
-    nu0 = 0
-    for ii, gen in enumerate(gens):
-        fname = path + '{}.msms'.format(int(gen))
-        if (not ii) and s != 0:
-            while (nu0 < 0.9):
-                cmd = "{} -N {} -ms {} {} -t {} -r {} {:.0f} -SAA {} -SaA {} -SI {} 1 {} -Sp {} -oOC -Smark -oFP 0.000000000000E00 {}  -SForceKeep -SFC   -oTW  >{}".format(
-                        msms, Ne, n, numReplicates, theta, rho, window_size, 2 * Ne * s, Ne * s, gen / (4. * Ne),
-                                                                             origin_count / Ne,
-                        posUnderSelection, ('-seed {}'.format(seed), '')[seed is ''], fname)
-                os.system(cmd)
-
-                nu0 = MSMS.load(fname)[0].mean(0).loc[25000]
-        else:
-            cmd = "{} -N {} -ms {} {} -t {} -r {} {:.0f} -SAA {} -SaA {} -SI {} 1 {} -Sp {} -oOC -Smark -oFP 0.000000000000E00 {}  -SFC -SForceKeep  -oTW  >{}".format(
-                    msms, Ne, n, numReplicates, theta, rho, window_size, 2 * Ne * s, Ne * s, gen / (4. * Ne),
-                                                                         origin_count / Ne,
-                    posUnderSelection, ('-seed {}'.format(seed), '')[seed is ''], fname)
-            os.system(cmd)
-        if not ii: seed = MSMS.getSeed(fname)
-
-
-def MSMSSelectionNu(msms, Ne, n, numReplicates, theta, rho, window_size, s, posUnderSelection, nu, path=None):
-    seed = ''
-    if path is None: path = '~/tmp.msms'
-    fname = path + '{}.msms'.format(nu)
-    cmd = "{} -N {} -ms {} {} -t {} -r {} {:.0f} -SAA {} -SaA {} -SF 0 {}  -Sp {} -oOC -Smark -oFP 0.000000000000E00 {}  -SFC   -oTW  >{}".format(
-            msms, Ne, n, numReplicates, theta, rho, window_size, 2 * Ne * s, Ne * s, nu, posUnderSelection,
-            ('-seed {}'.format(seed), '')[seed is ''], fname)
-    print cmd
-    os.system(cmd)
-    return MSMS.load(fname)
-
-
-def MSMSSelectionNuForward(msms, Ne, n, numReplicates, theta, rho, window_size, s, origin_count, posUnderSelection,
-                           gens, path):
-    nu0 = 0
-    for ii, gen in enumerate(gens):
-        fname = path + '{}.msms'.format(gen)
-        if (not ii) and s != 0:
-            while (nu0 < 0.95) or (nu0 > 0.99):
-                cmd = "{} -N {} -ms {} {} -t {} -r {} {:.0f} -SAA {} -SaA {} -SI {} 1 {} -Sp {} -oOC -Smark -oFP 0.000000000000E00 {}  -SFC   -oTW  >{}".format(
-                        msms, Ne, n, numReplicates, theta, rho, window_size, 2 * Ne * s, Ne * s, gen / (4. * Ne),
-                                                                             origin_count / Ne,
-                        posUnderSelection, ('-seed {}'.format(seed), '')[seed is ''], fname)
-                os.system(cmd)
-                nu0 = MSMS.load(fname)[0].mean(0).loc[25000]
-        print nu0, gen, cmd
-        if not ii: seed = MSMS.getSeed(fname)
 
 class MSMS:
     @staticmethod
@@ -200,6 +129,79 @@ class MSMS:
         assert pos.index.value_counts().max()==1
         return pos.index.values
 
+    @staticmethod
+    def Selection(msms, Ne, n, numReplicates, theta, rho, window_size, s, origin_count, posUnderSelection, gens, path):
+        seed = ''
+        for ii, gen in enumerate(gens):
+            fname = path + '{}.msms'.format(int(gen))
+            if (not ii) and s != 0:
+                # while (nu0 < 0.95) or (nu0 > 0.99):
+                cmd = "{} -N {} -ms {} {} -t {} -r {} {:.0f} -SAA {} -SaA {} -SI {} 1 {} -Sp {} -oOC -Smark -oFP 0.000000000000E00 {}  -SForceKeep -SFC   -oTW  >{}".format(
+                        msms, Ne, n, numReplicates, theta, rho, window_size, 2 * Ne * s, Ne * s, gen / (4. * Ne),
+                                                                             origin_count / Ne,
+                        posUnderSelection, ('-seed {}'.format(seed), '')[seed is ''], fname)
+                os.system(cmd)
+            else:
+                cmd = "{} -N {} -ms {} {} -t {} -r {} {:.0f} -SAA {} -SaA {} -SI {} 1 {} -Sp {} -oOC -Smark -oFP 0.000000000000E00 {}  -SFC -SForceKeep  -oTW  >{}".format(
+                        msms, Ne, n, numReplicates, theta, rho, window_size, 2 * Ne * s, Ne * s, gen / (4. * Ne),
+                                                                             origin_count / Ne,
+                        posUnderSelection, ('-seed {}'.format(seed), '')[seed is ''], fname)
+                os.system(cmd)
+            if not ii: seed = MSMS.getSeed(fname)
+
+    @staticmethod
+    def SelectionFinale(msms, Ne, n, numReplicates, theta, rho, window_size, s, origin_count, posUnderSelection, gens,
+                            path):
+        seed = ''
+        nu0 = 0
+        for ii, gen in enumerate(gens):
+            fname = path + '{}.msms'.format(int(gen))
+            if (not ii) and s != 0:
+                while (nu0 < 0.9):
+                    cmd = "{} -N {} -ms {} {} -t {} -r {} {:.0f} -SAA {} -SaA {} -SI {} 1 {} -Sp {} -oOC -Smark -oFP 0.000000000000E00 {}  -SForceKeep -SFC   -oTW  >{}".format(
+                            msms, Ne, n, numReplicates, theta, rho, window_size, 2 * Ne * s, Ne * s, gen / (4. * Ne),
+                                                                                 origin_count / Ne,
+                            posUnderSelection, ('-seed {}'.format(seed), '')[seed is ''], fname)
+                    os.system(cmd)
+
+                    nu0 = MSMS.load(fname)[0].mean(0).loc[25000]
+            else:
+                cmd = "{} -N {} -ms {} {} -t {} -r {} {:.0f} -SAA {} -SaA {} -SI {} 1 {} -Sp {} -oOC -Smark -oFP 0.000000000000E00 {}  -SFC -SForceKeep  -oTW  >{}".format(
+                        msms, Ne, n, numReplicates, theta, rho, window_size, 2 * Ne * s, Ne * s, gen / (4. * Ne),
+                                                                             origin_count / Ne,
+                        posUnderSelection, ('-seed {}'.format(seed), '')[seed is ''], fname)
+                os.system(cmd)
+            if not ii: seed = MSMS.getSeed(fname)
+
+    @staticmethod
+    def SelectionNu(msms, Ne, n, numReplicates, theta, rho, window_size, s, posUnderSelection, nu, path=None):
+        seed = ''
+        if path is None: path = '~/tmp.msms'
+        fname = path + '{}.msms'.format(nu)
+        cmd = "{} -N {} -ms {} {} -t {} -r {} {:.0f} -SAA {} -SaA {} -SF 0 {}  -Sp {} -oOC -Smark -oFP 0.000000000000E00 {}  -SFC   -oTW  >{}".format(
+                msms, Ne, n, numReplicates, theta, rho, window_size, 2 * Ne * s, Ne * s, nu, posUnderSelection,
+                ('-seed {}'.format(seed), '')[seed is ''], fname)
+        print cmd
+        os.system(cmd)
+        return MSMS.load(fname)
+
+    @staticmethod
+    def SelectionNuForward(msms, Ne, n, numReplicates, theta, rho, window_size, s, origin_count, posUnderSelection,
+                               gens, path):
+        nu0 = 0
+        for ii, gen in enumerate(gens):
+            fname = path + '{}.msms'.format(gen)
+            if (not ii) and s != 0:
+                while (nu0 < 0.95) or (nu0 > 0.99):
+                    cmd = "{} -N {} -ms {} {} -t {} -r {} {:.0f} -SAA {} -SaA {} -SI {} 1 {} -Sp {} -oOC -Smark -oFP 0.000000000000E00 {}  -SFC   -oTW  >{}".format(
+                            msms, Ne, n, numReplicates, theta, rho, window_size, 2 * Ne * s, Ne * s, gen / (4. * Ne),
+                                                                                 origin_count / Ne,
+                            posUnderSelection, ('-seed {}'.format(seed), '')[seed is ''], fname)
+                    os.system(cmd)
+                    nu0 = MSMS.load(fname)[0].mean(0).loc[25000]
+            print nu0, gen, cmd
+            if not ii: seed = MSMS.getSeed(fname)
+
 
 class Simulation:
     @staticmethod
@@ -298,7 +300,6 @@ class Simulation:
         return pd.DataFrame(zip(*map(lambda x: x.split(';;'), a.strip().split('\n')))).T.set_index(0)[1].astype(float)
 
 
-
     def createInitialDiploidPopulation(self):
         """
         initHaps : np 2D array which m x nSS where m i number of individual haps and nSS is number of SS
@@ -319,7 +320,9 @@ class Simulation:
     #     sim.stat(pop, alleleFreq=range(nSS));print np.array([pop.dvars().alleleFreq[x][1] for x in range(nSS)])
         return pop
     
-    def multiLocSelectionHardSweepOneReplicate(self,pop):
+    def simualte(self, pop):
+        from simuPOP.demography import *
+        model=ExponentialGrowthModel(T=50, N0=1000, NT=200)
         simulator = sim.Simulator(pop.clone(), rep=1)
         global a;a = ""
         step=1# this is slow but safe, dont change it
@@ -332,7 +335,7 @@ class Simulation:
         simulator.evolve(
             initOps=[sim.InitSex()],
             preOps=sim.MapSelector(loci=self.siteUnderSelection, fitness={(0,0):1, (0,1):1+self.s*self.h, (1,1):1+self.s}),
-            matingScheme=sim.RandomMating(ops=sim.Recombinator(intensity=self.r)),
+            matingScheme=sim.RandomMating(ops=sim.Recombinator(intensity=self.r),subPopSize=model),
             postOps=[sim.Stat(alleleFreq=range(len(self.positions)), step=step), sim.PyEval("'Gen %4d;;' % (gen+1)", reps=0,step= step, output=fff), sim.PyEval(r"'{},'.format(map(lambda x: round(x[1],5),alleleFreq.values()))", step=step, output=fff),sim.PyOutput('\n', reps=-1, step=step, output=fff)],
             gen = self.maxGeneration)
         # idx=np.arange(self.generationStep-1,self.maxGeneration,self.generationStep)+self.initialNeutralGenerations
@@ -342,7 +345,7 @@ class Simulation:
         if data[-1, self.siteUnderSelection] or self.s == 0 or not self.makeSureSelectedSiteDontGetLost:
             return data[int(self.startGeneration/self.generationStep):,:]
         else:
-            return self.multiLocSelectionHardSweepOneReplicate(pop)
+            return self.simualte(pop)
     
     def simulateH0(self):
         self.H0=MSMS.Song(F=self.F, L=self.L, Ne=self.Ne, r=self.r, mu=self.mu,uid=self.uidMSMS)
@@ -393,7 +396,7 @@ class Simulation:
                         print 'Try again. No site at freq ',self.initialCarrierFreq, self.uid; return
                 self.set_siteUnderSelection(sites[np.random.randint(0,len(sites))])
         pop= self.createInitialDiploidPopulation()
-        self.X=np.array([self.multiLocSelectionHardSweepOneReplicate(pop.clone()) for _ in range(self.numReplicates)]).swapaxes(0,2).swapaxes(0,1) #makes sure the site under selection does not go to zero
+        self.X=np.array([self.simualte(pop.clone()) for _ in range(self.numReplicates)]).swapaxes(0, 2).swapaxes(0, 1) #makes sure the site under selection does not go to zero
         if self.ignoreInitialNeutralGenerations:    self.X=self.X[self.initialNeutralGenerations:,:,:]
         self.X=np.append(np.tile(self.X0[:,None],(1,self.X.shape[2]))[None,:,:],self.X,axis=0)
         if self.onlyKeep is not None:   self.X=self.X[:,self.X0==self.onlyKeep,:]
@@ -402,15 +405,6 @@ class Simulation:
             pd.to_pickle(self,self.outpath+self.uid+'.pkl')
 
 
-    def getLD(self,site=None,pos=None):
-        from Utils import Estimate
-        LD=Estimate.LD(self.H0, self.siteUnderSelection,measure='DPrime')
-        if site is not None:
-            return LD.iloc[site]
-        if pos is not None:
-            return LD[pos]
-        return Estimate.LD(self.H0, self.siteUnderSelection,measure='DPrime')
-        
      
     def getGenerationTimes(self,step=None,includeZeroGeneration=True):
         if step is None: step=self.generationStep
@@ -427,36 +421,7 @@ class Simulation:
             return times
         else:
             return times[1:]
-    
-    def plotWindow(self,i,ignoreZeros=False):
-        plt.figure()
-        y=self.getAverageHAF(i)
-        if ignoreZeros:
-            y[y==0]=None
-        y=y.dropna(inplace=None)
-        y.plot(ax=plt.gca())         
-           
-    @staticmethod    
-    def evolve(pop):
-        sim.dump(pop)
-        pop.evolve(initOps=[sim.InitSex()],    matingScheme=sim.RandomMating(ops=sim.Recombinator(intensity=0.01)),
-        postOps=[sim.stat(pop, alleleFreq=range(24),step=10), sim.PyEval(r"alleleFreq[0]", step=10),], gen=50)
-    
-    def getWinCenter(self):
-        pd.Series( map(lambda win: (self.positions[win][0]+self.positions[win][-1])/2, self.winIdx))
-        
-    def getWinMedian(self):
-        pd.Series( map(lambda win: pd.Series(self.positions[win]).median(), self.winIdx),dtype=int)
-    
-    def getNeutralSimulation(self):
-        return Simulation(s=0, generationStep=self.generationStep, maxGeneration=self.maxGeneration, H0=self.H0)
-    
-    def getWinUnderSelection(self):
-        return (abs(self.posUnderSelection-self.winMidPos)).argmin() # winUnderSelection
-    
-    def Hi(self):
-        print 'Hi'
-    
+
     
     @staticmethod
     def getFixationTime(s,Ne=200,roundto10=True):
