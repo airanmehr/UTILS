@@ -25,7 +25,7 @@ def fff(msg):
 
 class MSMS:
     @staticmethod
-    def Song(F=200, mu=2*1e-9, L=50000, Ne=1e6,r=2*1e-8, uid=None, theta=None, msmsFile=None, dir=None):
+    def Song(F=200, mu=2*1e-9, L=50000, Ne=1e6,r=4e-9, uid=None, theta=None, msmsFile=None, dir=None):
         """
         Everything is exactly the sam
         """
@@ -33,10 +33,11 @@ class MSMS:
         if msmsFile is not None:
             pop=MSMS.load(filename=msmsFile)[0]
         else:
+            print 2*Ne*mu*L, 2*Ne*(L-1)*r,theta
             if theta:
-                pop=MSMS.MSMS(n=F, numReps=1, theta=theta, rho=4*Ne*(L-1)*r, L=L, Ne=Ne, uid=uid, dir=dir)[0]
+                pop=MSMS.MSMS(n=F, numReps=1, theta=theta, rho=2*Ne*(L-1)*r, L=L, Ne=Ne, uid=uid, dir=dir)[0]
             else:
-                pop=MSMS.MSMS(n=F, numReps=1, theta=4*Ne*mu*L, rho=4*Ne*(L-1)*r, L=L, Ne=Ne, uid=uid, dir=dir)[0]
+                pop=MSMS.MSMS(n=F, numReps=1, theta=2*Ne*mu*L, rho=2*Ne*(L-1)*r, L=L, Ne=Ne, uid=uid, dir=dir)[0]
         pop.r=r
         pop.Ne=Ne
         pop.L=L
@@ -47,6 +48,7 @@ class MSMS:
         """
         Returns a list of dataframe for each replicate
         """
+        print        n, numReps, theta, rho, L
         if dir is None:
             dir= utl.simoutpath;dir+= 'msms/';
         if not os.path.exists(dir) : os.makedirs(dir)
@@ -57,6 +59,7 @@ class MSMS:
             uid=str(uuid.uuid4())
         unique_filename = dir+uid+'.msms'
         cmd="java -jar -Xmx2g ~/bin/msms/lib/msms.jar -ms {} {} -t {:.0f} -r {:.0f} {:.0f} -oFP 0.000000000000E00 > {}".format(n, numReps, theta, rho, L, unique_filename)
+        print cmd
         subprocess.call(cmd,shell=True)
         return MSMS.load(unique_filename)
 
@@ -241,7 +244,7 @@ class Simulation:
         self.D = self.D.apply(lambda x: x[:, :, replicates])
 
     def __init__(self, outpath=utl.simoutpath, N=1000, generationStep=10, maxGeneration=None,
-                 s=0.05, r=2*1e-8, Ne=1e6, mu=1e-9, F=200, h=0.5, L=50000, startGeneration=0, numReplicates=3, H0=None,
+                 s=0.05, r=4e-9, Ne=1e6, mu=2e-9, F=200, h=0.5, L=50000, startGeneration=0, numReplicates=3, H0=None,
                  foldInitialAFs=False, save=True, foutName=None,
                  doForwardSimulationNow=True, experimentID=-1,
                  msmsFile=None, initialCarrierFreq=0, ExperimentName=None, simulateNeutrallyFor=0,
@@ -270,7 +273,7 @@ class Simulation:
         if not os.path.exists(self.outpath) : os.makedirs(self.outpath)
         if not os.path.exists(self.outpathmsms) : os.makedirs(self.outpathmsms)
         if self.maxGeneration is None: self.maxGeneration=Simulation.getFixationTime(self.s, Ne=self.F, roundto10=True)
-        self.theta=4*self.Ne*self.mu*self.L
+        self.theta=2*self.Ne*self.mu*self.L
         if foutName is not None:
             self.uid=foutName
             self.uidMSMS=None
@@ -321,8 +324,8 @@ class Simulation:
         return pop
     
     def simualte(self, pop):
-        from simuPOP.demography import *
-        model=ExponentialGrowthModel(T=50, N0=1000, NT=200)
+        import simuPOP.demography as dmg
+        model=dmg.ExponentialGrowthModel(T=50, N0=1000, NT=200)
         simulator = sim.Simulator(pop.clone(), rep=1)
         global a;a = ""
         step=1# this is slow but safe, dont change it

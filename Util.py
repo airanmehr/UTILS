@@ -899,3 +899,11 @@ class VCF:
         df['ID']='.'
         df[['CHROM','ID','GMAP','POS']].to_csv(VCFin+'.map',sep='\t',header=None,index=None)
 
+
+def polymorphic(data, minAF=0.01,mincoverage=10,index=True):
+    def poly(x):return (x>=minAF)&(x<=1-minAF)
+    C,D=data.xs('C',level='READ',axis=1),data.xs('D',level='READ',axis=1)
+    I=(C.sum(1)/D.sum(1)).apply(lambda x:poly(x)) & ((D>=mincoverage).mean(1)==1)
+    if index:
+        return I
+    return data[I]
