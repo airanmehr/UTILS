@@ -842,52 +842,66 @@ class VCF:
         return Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].split('\n')[0].split()
     @staticmethod
     def headerSamples(fname):
-        return VCF.header(fname)[9:]
+        return map(INT,VCF.header(fname)[9:])
 
     @staticmethod
     def loadPanel(fname=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel'):
         return  pd.read_table(fname,sep='\t').dropna(axis=1)
 
     @staticmethod
+    def getDataframeColumns(fin,panel=None):
+        cols=[]
+        if panel is not None:
+            panel=VCF.loadPanel(panel).set_index('sample')[['super_pop','pop']]
+            f=lambda x: tuple(panel.loc[x].tolist())
+            for x in VCF.headerSamples(fin):cols+=[f(x)+( x,'A'),f(x)+(x,'B')]
+            cols=pd.MultiIndex.from_tuples(cols,names=['SPOP', 'POP', 'ID','HAP'])
+        else:
+            for x in VCF.headerSamples(fin):cols+=[( x,'A'),(x,'B')]
+            cols=pd.MultiIndex.from_tuples(cols,names=[ 'ID','HAP'])
+        return cols
+
+    @staticmethod
     def getDataframe(CHROM,start=None,end=None,
                      fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
-                     bcftools="/home/arya/bin/bcftools/bcftools"):
-                     #panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',
+                     bcftools="/home/arya/bin/bcftools/bcftools",
+                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel'):
         reg=getRegionPrameter(CHROM,start,end)
         fin=fin.format(CHROM)
-        cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | tr '|' '\\t' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
+        cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | tr '|' '\\t'|  tr '/' '\\t' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
         csv=Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].split('\n')
         df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5)).astype(int)
         df.index.names=['CHROM','POS', 'ID', 'REF', 'ALT']
-        cols=[]
-         #panel=VCF.loadPanel(panel).set_index('sample')[['super_pop','pop']]
-        #f=lambda x: tuple(panel.loc[x].tolist())
-        #for x in VCF.headerSamples(fin):cols+=[f(x)+( x,'A'),f(x)+(x,'B')]
-        #df.columns=pd.MultiIndex.from_tuples(cols,names=['SPOP', 'POP', 'ID','HAP'])
-        for x in VCF.headerSamples(fin):cols+=[( x,'A'),(x,'B')]
-        df.columns=pd.MultiIndex.from_tuples(cols,names=[ 'ID','HAP'])
+        df.columns=VCF.getDataframeColumns(fin,panel)
         return df
 
     @staticmethod
     def computeFreqs(CHROM,start=None,end=None,
                      fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
-                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel'):
+                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',hap=False):
         try:
             a=VCF.getDataframe(CHROM,start,end,fin=fin,panel=panel)
-            return pd.concat([a.mean(1).rename('ALL'),a.groupby(level=0,axis=1).mean(),a.groupby(level=1,axis=1).mean()],1)
+            if hap: return a
+            if panel is not None:
+                return pd.concat([a.mean(1).rename('ALL'),a.groupby(level=0,axis=1).mean(),a.groupby(level=1,axis=1).mean()],1)
+            else:
+                return a.mean(1).rename('ALL')
         except:
             return None
     @staticmethod
     def computeFreqsChromosome(CHROM,
                        fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
-                       panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',winSize=100000):
+                       panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',winSize=100000,hap=False):
         CHROM=INT(CHROM)
-        if CHROM == 'Y': fin=dataPath1000GP+'ALL.chr{}.phase3_integrated_v1b.20130502.genotypes.vcf.gz'
-        if CHROM == 'X': fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v1b.20130502.genotypes.vcf.gz'
+        #if CHROM == 'Y': fin=dataPath1000GP+'ALL.chr{}.phase3_integrated_v1b.20130502.genotypes.vcf.gz'
+        #if CHROM == 'X': fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v1b.20130502.genotypes.vcf.gz'
         import vcf
-        L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs[str(CHROM)].length
+        try:
+            L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs[str(CHROM)].length
+        except:
+            L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs['chr{}'.format(CHROM)].length
         print CHROM,int(L/1e6),'Mbp'
-        a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel) for start in xrange(0,ceilto(L,winSize),winSize)]
+        a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel,hap=hap) for start in xrange(0,ceilto(L,winSize),winSize)]
         print a
         return intIndex(uniqIndex(pd.concat([x  for x in a if x is not None]),subset=['CHROM','POS']))
     @staticmethod
