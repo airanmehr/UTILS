@@ -33,7 +33,6 @@ class MSMS:
         if msmsFile is not None:
             pop=MSMS.load(filename=msmsFile)[0]
         else:
-            print 2*Ne*mu*L, 2*Ne*(L-1)*r,theta
             if theta:
                 pop=MSMS.MSMS(n=F, numReps=1, theta=theta, rho=2*Ne*(L-1)*r, L=L, Ne=Ne, uid=uid, dir=dir)[0]
             else:
@@ -48,7 +47,6 @@ class MSMS:
         """
         Returns a list of dataframe for each replicate
         """
-        print        n, numReps, theta, rho, L
         if dir is None:
             dir= utl.simoutpath;dir+= 'msms/';
         if not os.path.exists(dir) : os.makedirs(dir)
@@ -59,7 +57,6 @@ class MSMS:
             uid=str(uuid.uuid4())
         unique_filename = dir+uid+'.msms'
         cmd="java -jar -Xmx2g ~/bin/msms/lib/msms.jar -ms {} {} -t {:.0f} -r {:.0f} {:.0f} -oFP 0.000000000000E00 > {}".format(n, numReps, theta, rho, L, unique_filename)
-        print cmd
         subprocess.call(cmd,shell=True)
         return MSMS.load(unique_filename)
 
@@ -249,7 +246,7 @@ class Simulation:
                  doForwardSimulationNow=True, experimentID=-1,
                  msmsFile=None, initialCarrierFreq=0, ExperimentName=None, simulateNeutrallyFor=0,
                  initialNeutralGenerations=0, ignoreInitialNeutralGenerations=True,
-                 makeSureSelectedSiteDontGetLost=True, onlyKeep=None, verbose=0, sampingTimes=None, minIncrease=0
+                 makeSureSelectedSiteDontGetLost=True, onlyKeep=None, verbose=0, sampingTimes=None, minIncrease=0,model=None
                  ):
         """
         A General Simulation Class; with params
@@ -257,13 +254,14 @@ class Simulation:
         """
         assert ExperimentName != None
         self.save=save
+        self.model=model
         self.minIncrease = minIncrease
         self.samplingTimes=sampingTimes
         self.initialNeutralGenerations=initialNeutralGenerations
         self.onlyKeep=onlyKeep
         self.makeSureSelectedSiteDontGetLost=makeSureSelectedSiteDontGetLost
         self.ignoreInitialNeutralGenerations=ignoreInitialNeutralGenerations
-        self.msmsFile=msmsFile;self.outpath=outpath; self.outpath=outpath ; self.N=N; self.generationStep=generationStep; self.maxGeneration= maxGeneration; self.s=s; self.r=r;self.Ne=Ne;self.mu=mu; self.F=F; self.h=h; self.L=L;self.startGeneration=startGeneration;self.numReplicates=numReplicates;self.setH0(H0);self.foldInitialAFs=foldInitialAFs;self.doForwardSimulationNow=doForwardSimulationNow;self.experimentID=experimentID
+        self.msmsFile=msmsFile;self.outpath=outpath; self.outpath=outpath ; self.N=N; self.generationStep=generationStep; self.maxGeneration= maxGeneration; self.s=s; self.r=r;self.Ne=Ne;self.mu=mu; self.F=F; self.h=h; self.L=int(L);self.startGeneration=startGeneration;self.numReplicates=numReplicates;self.setH0(H0);self.foldInitialAFs=foldInitialAFs;self.doForwardSimulationNow=doForwardSimulationNow;self.experimentID=experimentID
         self.simulateNeutrallyFor=simulateNeutrallyFor
         self.initialCarrierFreq= initialCarrierFreq if initialCarrierFreq else 1./self.F
         if not os.path.exists(self.outpath) : os.makedirs(self.outpath)
@@ -283,6 +281,9 @@ class Simulation:
         else:
             self.uid=str(uuid.uuid4())
             self.uidMSMS=self.uid
+        if self.model is None:
+            import simuPOP.demography as dmg
+            self.model=dmg.LinearGrowthModel(T=self.maxGeneration, N0=self.N, NT=self.N)
         if self.doForwardSimulationNow:
             self.forwardSimulation()
 
@@ -325,7 +326,7 @@ class Simulation:
     
     def simualte(self, pop):
         import simuPOP.demography as dmg
-        model=dmg.ExponentialGrowthModel(T=50, N0=1000, NT=200)
+        # model=dmg.ExponentialGrowthModel(T=50, N0=1000, NT=200)
         simulator = sim.Simulator(pop.clone(), rep=1)
         global a;a = ""
         step=1# this is slow but safe, dont change it
@@ -338,7 +339,7 @@ class Simulation:
         simulator.evolve(
             initOps=[sim.InitSex()],
             preOps=sim.MapSelector(loci=self.siteUnderSelection, fitness={(0,0):1, (0,1):1+self.s*self.h, (1,1):1+self.s}),
-            matingScheme=sim.RandomMating(ops=sim.Recombinator(intensity=self.r),subPopSize=model),
+            matingScheme=sim.RandomMating(ops=sim.Recombinator(intensity=self.r),subPopSize=self.model),
             postOps=[sim.Stat(alleleFreq=range(len(self.positions)), step=step), sim.PyEval("'Gen %4d;;' % (gen+1)", reps=0,step= step, output=fff), sim.PyEval(r"'{},'.format(map(lambda x: round(x[1],5),alleleFreq.values()))", step=step, output=fff),sim.PyOutput('\n', reps=-1, step=step, output=fff)],
             gen = self.maxGeneration)
         # idx=np.arange(self.generationStep-1,self.maxGeneration,self.generationStep)+self.initialNeutralGenerations
@@ -380,6 +381,7 @@ class Simulation:
             idx=H0.mean(0)>0.5
             H0.iloc[:,idx.values]=1-H0.iloc[:,idx.values]
         self.setH0(H0)
+        print self.L,self.H0.shape[1]
         self.positions_msms=self.H0.columns.values.copy(True)
         self.positions=sorted(np.random.choice(self.L,self.H0.shape[1],replace=False))
         self.H0=pd.DataFrame(self.H0.values, columns=self.positions)
@@ -518,8 +520,7 @@ class Simulation:
         self.cd.index = C.index
         self.cdi = self.cd.applymap(lambda x: index.loc[x])
 
-    def sampleDepths(self):
-        depths = [30, 100, 300]
+    def sampleDepths(self,depths = [30, 100, 300]):
         self.D = pd.Series(None, index=depths)
         self.C = pd.Series(None, index=depths)
         for depthRate in depths:
