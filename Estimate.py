@@ -72,9 +72,12 @@ class Estimate:
                 afs=afs.drop(0).sort_index()
         if name is not None:
             afs.name=name
+
+        if bins==-1:
+            afs=(afs+pd.Series(0,range(1,(n,int(n/2)+1)[fold]))).fillna(0)
+            afs.index=map(int,afs.index)
         if normed:
             return afs/float(afs.sum())
-        if bins==-1:afs=(afs+pd.Series(0,range(1,n))).fillna(0)
         return  afs
     @staticmethod
     def plotSAFS(x,bins=10,n=None, fixedRangeHist=True,removeFixedSites=False):

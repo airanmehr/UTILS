@@ -222,6 +222,8 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
         fig,axes=plt.subplots(columns.size, 1, sharex=True,figsize=(20, columns.size * 4));
         if columns.size==1:
             axes=[axes]
+    else:
+        axes=fig.axes
     for i in range(columns.size):
         plotOne(df[columns[i]], df.color, names[i], chroms,common, shade,axes[i])
     plt.setp(plt.gca().get_xticklabels(), visible=True)

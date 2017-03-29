@@ -379,20 +379,25 @@ class BED:
             df.start = df.start.apply(lambda x: (x, 0)[x < 0])
             df['len'] = df.end - df.start
             return df.set_index('start')
-        if 'start' not in regions.columns:
+        if len(regions.shape)==1:
+            df = regions.groupby(level=0).apply(lambda x: get_interval(x, padding)).reset_index().set_index('CHROM')
+        elif 'start' not in regions.columns:
             df = regions.groupby(level=0).apply(lambda x: get_interval(x, padding)).reset_index().set_index('CHROM')
         else:
             df=regions.copy(True)
+            df.start-=padding;df.end+=padding
+            df.loc[df.start<0,'start']=0
         df=df.reset_index().sort_values(['CHROM','start']).set_index('CHROM')
         df['name'] = range(df.shape[0])
-        df.score = (df.score.round(3) * 1000)
-        df = df.astype(int)
+        df.score=(df.score*1000).round()
+        df[['start','end','score']]=df[['start','end','score']].applymap(int)
         csv = df[['start', 'end', 'name', 'score']].to_csv(header=False, sep='\t')
         csv = \
         Popen(['bedtools', 'merge', '-scores', 'max', '-i'], stdout=PIPE, stdin=PIPE, stderr=STDOUT).communicate(input=csv)[
             0]
-        df = pd.DataFrame(map(lambda x: x.split(), csv.split('\n')))
+        df = pd.DataFrame(map(lambda x: x.split(), csv.split('\n'))).dropna()
         df.columns=['CHROM', 'start', 'end', 'score']
+        df.CHROM=df.CHROM.apply(INT)
         df=df.dropna().set_index('CHROM').astype(int)
         df.score /= 1000
         df['len'] = df.end - df.start
@@ -404,8 +409,10 @@ class BED:
         dfb.end = dfb.end.astype(int)
         import tempfile
         with tempfile.NamedTemporaryFile()as f1, tempfile.NamedTemporaryFile() as f2:
-            BED.save(dfa.reset_index()[['CHROM', 'POS', dfa_interval_name]].drop_duplicates(),
-                    intervalName=dfa_interval_name, fhandle=f1)
+            if 'POS' in dfa.index.names:
+                BED.save(dfa.reset_index()[['CHROM', 'POS', dfa_interval_name]].drop_duplicates(),intervalName=dfa_interval_name, fhandle=f1)
+            else:
+                BED.save(dfa, intervalName=dfa_interval_name, fhandle=f1)
             BED.save(dfb, intervalName=dfb_interval_name, fhandle=f2)
             csv = Popen(['bedtools', 'intersect', '-wb', '-wa', '-a', f1.name, '-b', f2.name], stdout=PIPE, stdin=PIPE,
                         stderr=STDOUT).communicate()[0]
@@ -472,7 +479,7 @@ class BED:
                 print >>fout,df[['CHROM','start','end',track]].dropna().to_csv(sep=' ',index=None,header=None)
             fout.flush()
         import subprocess
-        subprocess.call('rm {}'.format(fout_path+'.gz'),shell=True)
+        subprocess.call('rm -f {}'.format(fout_path+'.gz'),shell=True)
         subprocess.call('bgzip {}'.format(fout_path),shell=True)
 
     @staticmethod
@@ -502,7 +509,7 @@ class BED:
             subprocess.call(cmd,shell=True)
         maped=pd.DataFrame(map(lambda x: x.split(), open(out_file).readlines()),columns=['CHROM','start','end','ID']).dropna()
         maped.ID=maped.ID.astype('int')
-        maped=maped.set_index('ID')
+        maped=maped.set_index('ID').sort_index()
         maped=pd.concat([interval,maped.loc[:,maped.columns!='CHROM']],1,keys=[hgFrom,hgTo])
         if not hasChr:
             maped[(hgFrom,'CHROM')]=maped[(hgFrom,'CHROM')].apply(lambda x: x[3:])
@@ -913,6 +920,18 @@ class VCF:
         df['ID']='.'
         df[['CHROM','ID','GMAP','POS']].to_csv(VCFin+'.map',sep='\t',header=None,index=None)
 
+    @staticmethod
+    def subset(VCFin, pop,panel,chrom):
+        assert len(pop)
+        if pop=='ALL' or pop is None:return VCFin,None
+        print 'Creating a vcf.gz file for individuals of {} population'.format(pop)
+        fileSamples='{}.{}.chr{}'.format(panel,pop,chrom)
+        fileVCF=VCFin.replace('.vcf.gz','.{}.vcf.gz'.format(pop))
+        os.system('grep {} {} | cut -f1 >{}'.format(pop,panel,fileSamples))
+        cmd="{} view -S {} {} | {} filter -i \"N_ALT=1 & TYPE='snp'\" -O z -o {}".format(bcf,fileSamples,VCFin,bcf,fileVCF)
+        os.system(cmd)
+        return fileVCF
+
 
 def polymorphic(data, minAF=0.01,mincoverage=10,index=True):
     def poly(x):return (x>=minAF)&(x<=1-minAF)
@@ -921,3 +940,41 @@ def polymorphic(data, minAF=0.01,mincoverage=10,index=True):
     if index:
         return I
     return data[I]
+def loadGenes(Intervals=True):
+    a=pd.read_csv(dataPath+'Human/WNG_1000GP_Phase3/gene_info.csv')[['chrom','pop','gene','POS_hg19']].rename(columns={'chrom':'CHROM','POS_hg19':'POS'})
+    a.CHROM=a.CHROM.apply(lambda x: INT(x[3:]))
+    a=a.set_index('pop')
+    if Intervals:
+        a['start']=a.POS-2e6
+        a['end']=a.POS+2e6
+        a['name']=a.gene
+    return a
+
+def normalizeIHS(a,field=None):
+    if field is None:
+        field=a.columns[-1]
+    m=a.set_index('x')[field].groupby(level=0).mean().sort_index()
+    s=a.set_index('x')[field].groupby(level=0).std().sort_index()
+    return (a[field]-m.loc[a.x].values)/s.loc[a.x].values
+
+
+def filterGap(a,assempbly=38,pad=50000):
+    gap=pd.read_csv(dataPath+'Human/hg{}.gap'.format(assempbly),sep='\t')[['chrom','chromStart','chromEnd']].rename(columns={'chrom':'CHROM','chromStart':'start','chromEnd':'end'}).reset_index()
+    gap.start-=pad;gap.end+=pad;gap.start[gap.start<0]=0
+    gap.CHROM=gap.CHROM.apply(lambda x: x[3:])
+    gap=BED.intersection(a,gap,dfa_interval_name=a.name,dfb_interval_name='index').rename(columns={'start':'POS'})
+    gap.index=map(INT,gap.index);gap.index.name='CHROM'
+    gap=gap.set_index('POS',append=True)[a.name].sort_index()
+    a.loc[gap.index]=None;a=a.dropna()
+    return a
+
+def get_gap(assempbly=38,pad=50000):
+    gap=pd.read_csv(dataPath+'Human/hg{}.gap'.format(assempbly),sep='\t')[['chrom','chromStart','chromEnd']].rename(columns={'chrom':'CHROM','chromStart':'start','chromEnd':'end'}).reset_index()
+    gap.start-=pad;gap.end+=pad;gap.start[gap.start<0]=0
+    gap.CHROM=gap.CHROM.apply(lambda x: x[3:])
+    return gap
+def loadFst(fname):
+    a=pd.read_csv(fname,sep='\t');
+    a.CHROM=a.CHROM.replace({'22':22});a=a.set_index(['CHROM','POS']).sort_index().iloc[:,0].rename('Fst')
+    a=a.loc[range(1,23)]
+    return a[a>0]
