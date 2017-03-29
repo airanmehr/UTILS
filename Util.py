@@ -922,6 +922,7 @@ class VCF:
 
     @staticmethod
     def subset(VCFin, pop,panel,chrom):
+        bcf='/home/arya/bin/bcftools/bcftools'
         assert len(pop)
         if pop=='ALL' or pop is None:return VCFin,None
         print 'Creating a vcf.gz file for individuals of {} population'.format(pop)
