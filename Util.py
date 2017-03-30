@@ -933,6 +933,25 @@ class VCF:
         os.system(cmd)
         return fileVCF
 
+    @staticmethod
+    def loadDP(fname):
+        a= pd.read_csv(fname,sep='\t',na_values='.').set_index(['CHROM','POS'])
+        a.columns=pd.MultiIndex.from_tuples(map(lambda x:(int(x.split('R')[1].split('F')[0]),int(x.split('F')[1])),a.columns))
+        return  a
+
+    @staticmethod
+    def loadCD(vcfgz,vcftools='~/bin/vcftools_0.1.13/bin/vcftools'):
+        """
+            vcfgz: vcf file where samples are in the format of RXXFXXX
+        """
+        vcf=os.path.basename(vcfgz)
+        path=vcfgz.split(vcf)[0]
+        os.system('cd {0} && {1} --gzvcf {2} --extract-FORMAT-info DP && {1} --gzvcf {2} --extract-FORMAT-info AD'.format(path,vcftools,vcf))
+        fname='out.{}.FORMAT'
+        a=map(lambda x: VCF.loadDP(path +fname.format(x)) ,['AD','DP'])
+        a=pd.concat(a,keys=['C','D'],axis=1).reorder_levels([1,2,0],1).sort_index(1)
+        a.columns.names=['REP','GEN','READ']
+        return a
 
 def polymorphic(data, minAF=0.01,mincoverage=10,index=True):
     def poly(x):return (x>=minAF)&(x<=1-minAF)
