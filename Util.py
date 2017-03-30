@@ -906,10 +906,13 @@ class VCF:
         try:
             L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs[str(CHROM)].length
         except:
-            L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs['chr{}'.format(CHROM)].length
-        print CHROM,int(L/1e6),'Mbp'
+            try:
+                L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs['chr{}'.format(CHROM)].length
+            except:
+                cmd='zgrep -v "#" {} | cut -f2 | tail -n1'.format(fin.format(CHROM))
+                L= int(Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].strip())
+        print 'Converting Chrom {}. ({} Mbp Long)'.format(CHROM,int(L/1e6))
         a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel,hap=hap) for start in xrange(0,ceilto(L,winSize),winSize)]
-        print a
         return intIndex(uniqIndex(pd.concat([x  for x in a if x is not None]),subset=['CHROM','POS']))
     @staticmethod
     def createGeneticMap(VCFin, chrom,gmpath=dataPath+'Human/map/GRCh37/plink.chr{}.GRCh37.map'):
@@ -924,7 +927,7 @@ class VCF:
     def subset(VCFin, pop,panel,chrom):
         bcf='/home/arya/bin/bcftools/bcftools'
         assert len(pop)
-        if pop=='ALL' or pop is None:return VCFin,None
+        if pop=='ALL' or pop is None:return VCFin
         print 'Creating a vcf.gz file for individuals of {} population'.format(pop)
         fileSamples='{}.{}.chr{}'.format(panel,pop,chrom)
         fileVCF=VCFin.replace('.vcf.gz','.{}.vcf.gz'.format(pop))
