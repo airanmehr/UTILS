@@ -505,8 +505,8 @@ class BED:
         import subprocess
         with open(in_file ,'w') as f1:
             BED.save(interval.reset_index()[['CHROM','start','end','index']], fhandle=f1,intervalName='index')
-            cmd = "/home/arya/anaconda2/bin/CrossMap.py bed  {} {} {}".format(chainfile, in_file, out_file)
-            subprocess.call(cmd,shell=True)
+        cmd = "CrossMap.py bed  {} {} {}".format(chainfile, in_file, out_file)
+        subprocess.call(cmd,shell=True)
         maped=pd.DataFrame(map(lambda x: x.split(), open(out_file).readlines()),columns=['CHROM','start','end','ID']).dropna()
         maped.ID=maped.ID.astype('int')
         maped=maped.set_index('ID').sort_index()
@@ -890,9 +890,10 @@ class VCF:
     @staticmethod
     def computeFreqs(CHROM,start=None,end=None,
                      fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
-                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',hap=False):
+                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',hap=False,genotype=False):
         try:
             a=VCF.getDataframe(CHROM,start,end,fin=fin,panel=panel)
+            if genotype: return a.groupby(level=[0,1,2],axis=1).sum()
             if hap: return a
             if panel is not None:
                 return pd.concat([a.mean(1).rename('ALL'),a.groupby(level=0,axis=1).mean(),a.groupby(level=1,axis=1).mean()],1)
@@ -903,19 +904,30 @@ class VCF:
     @staticmethod
     def computeFreqsChromosome(CHROM,
                        fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
-                       panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',winSize=100000,hap=False):
+                       panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',winSize=100000,hap=False,genotype=False,save=False):
         CHROM=INT(CHROM)
         #if CHROM == 'Y': fin=dataPath1000GP+'ALL.chr{}.phase3_integrated_v1b.20130502.genotypes.vcf.gz'
         #if CHROM == 'X': fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v1b.20130502.genotypes.vcf.gz'
         import vcf
         try:
-            L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs[str(CHROM)].length
-        except:
             L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs['chr{}'.format(CHROM)].length
-        print CHROM,int(L/1e6),'Mbp'
-        a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel,hap=hap) for start in xrange(0,ceilto(L,winSize),winSize)]
-        print a
-        return intIndex(uniqIndex(pd.concat([x  for x in a if x is not None]),subset=['CHROM','POS']))
+        except:
+            L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs[str(CHROM)].length
+            try:
+                L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs['chr{}'.format(CHROM)].length
+            except:
+                cmd='zgrep -v "#" {} | cut -f2 | tail -n1'.format(fin.format(CHROM))
+                L= int(Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].strip())
+        print 'Converting Chrom {}. ({} Mbp Long)'.format(CHROM,int(L/1e6))
+        a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel,hap=hap,genotype=genotype) for start in xrange(0,ceilto(L,winSize),winSize)]
+        a = intIndex(uniqIndex(pd.concat([x  for x in a if x is not None]),subset=['CHROM','POS']))
+        if save:
+            if hap: suff='.hap'
+            elif genotype: suff='.gt'
+            else: suff=''
+            a.to_pickle(fin.format(CHROM).replace('.vcf.gz','{}.df'.format(suff)))
+        return  a
+
     @staticmethod
     def createGeneticMap(VCFin, chrom,gmpath=dataPath+'Human/map/GRCh37/plink.chr{}.GRCh37.map'):
         gm = pd.read_csv(gmpath.format(chrom), sep='\t', header=None,names=['CHROM','ID','GMAP','POS'])
@@ -929,7 +941,7 @@ class VCF:
     def subset(VCFin, pop,panel,chrom):
         bcf='/home/arya/bin/bcftools/bcftools'
         assert len(pop)
-        if pop=='ALL' or pop is None:return VCFin,None
+        if pop=='ALL' or pop is None:return VCFin
         print 'Creating a vcf.gz file for individuals of {} population'.format(pop)
         fileSamples='{}.{}.chr{}'.format(panel,pop,chrom)
         fileVCF=VCFin.replace('.vcf.gz','.{}.vcf.gz'.format(pop))
