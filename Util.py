@@ -483,7 +483,7 @@ class BED:
         subprocess.call('bgzip {}'.format(fout_path),shell=True)
 
     @staticmethod
-    def xmap_bed(Interval,hgFrom=19, hgTo=38):
+    def xmap_bed(Interval,hgFrom=19, hgTo=38,removeXPchromSNPs=True):
         """
         Args:
             hgFrom: (int) assembly version eg: 19
@@ -494,7 +494,7 @@ class BED:
         """
         interval=Interval.copy(True)
         hasChr=False
-        if 'chr' in interval.CHROM.iloc[0]: hasChr=True
+        if 'chr' in str(interval.CHROM.iloc[0]): hasChr=True
         if not interval.CHROM.astype(str).apply(lambda x:'chr' in x).sum():
             interval.CHROM='chr'+interval.CHROM.apply(convertToIntStr)
         interval.start=interval.start.astype(int)
@@ -510,12 +510,17 @@ class BED:
         maped=pd.DataFrame(map(lambda x: x.split(), open(out_file).readlines()),columns=['CHROM','start','end','ID']).dropna()
         maped.ID=maped.ID.astype('int')
         maped=maped.set_index('ID').sort_index()
-        maped=pd.concat([interval,maped.loc[:,maped.columns!='CHROM']],1,keys=[hgFrom,hgTo])
+        maped=pd.concat([interval,maped],1,keys=[hgFrom,hgTo])
+        def ff(x):
+            try:return x[3:]
+            except:return x
         if not hasChr:
-            maped[(hgFrom,'CHROM')]=maped[(hgFrom,'CHROM')].apply(lambda x: x[3:])
+            maped[(hgFrom,'CHROM')]=maped[(hgFrom,'CHROM')].apply(lambda x: INT(x[3:]))
+            maped[(hgTo,'CHROM')]=maped[(hgTo,'CHROM')].apply(lambda x: INT(ff(x)))
         maped.sort_values([(hgFrom,'CHROM'),(hgFrom,'start')])
         maped=maped.set_index((hgFrom,'CHROM'))
         maped.index.name='CHROM'
+        if removeXPchromSNPs:maped=maped[maped.index==maped[(hgTo,'CHROM')]]
         os.remove(in_file)
         os.remove(out_file)
         os.remove(out_file+'.unmap')
