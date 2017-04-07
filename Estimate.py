@@ -95,7 +95,7 @@ class Estimate:
         return w
     @staticmethod
     def getEstimate(x=None,x_XP_pop=None, n=None, snp=None, method='all', bins=-1, normalizeTajimaD=True, averageResults=False,
-                    svm_model_sfselect=SVM, fixedRangeHist=True, removeFixedSites=True, selectionPredictor=False):
+                    svm_model_sfselect=SVM, fixedRangeHist=True, removeFixedSites=True):
         """
         Compute different estimates either based on AF (x and n should be given) or SNP matrix (only SNP matrix suffices) 
         watterson: watterson's theta 
@@ -111,12 +111,12 @@ class Estimate:
         """
         if x is not None:   # if AF is given
             if len(x.shape)==3: # if x is tensor T x L x R
-                return pd.DataFrame([Estimate.getEstimate(x=xt, method=method, bins=bins, n=n, normalizeTajimaD=normalizeTajimaD, averageResults=averageResults, svm_model_sfselect=svm_model_sfselect, fixedRangeHist=fixedRangeHist,removeFixedSites=removeFixedSites, selectionPredictor=selectionPredictor) for xt in x])
+                return pd.DataFrame([Estimate.getEstimate(x=xt, method=method, bins=bins, n=n, normalizeTajimaD=normalizeTajimaD, averageResults=averageResults, svm_model_sfselect=svm_model_sfselect, fixedRangeHist=fixedRangeHist,removeFixedSites=removeFixedSites) for xt in x])
             elif len(x.shape)==2: # if x is matrix L x R
                 if averageResults:
-                    return np.mean([Estimate.getEstimate(x=xr, method=method, bins=bins, n=n, normalizeTajimaD=normalizeTajimaD, averageResults=averageResults, svm_model_sfselect=svm_model_sfselect, fixedRangeHist=fixedRangeHist,removeFixedSites=removeFixedSites, selectionPredictor=selectionPredictor) for xr in x.T])
+                    return np.mean([Estimate.getEstimate(x=xr, method=method, bins=bins, n=n, normalizeTajimaD=normalizeTajimaD, averageResults=averageResults, svm_model_sfselect=svm_model_sfselect, fixedRangeHist=fixedRangeHist,removeFixedSites=removeFixedSites) for xr in x.T])
                 else:
-                    return ([Estimate.getEstimate(x=xr, method=method, bins=bins, n=n, normalizeTajimaD=normalizeTajimaD, averageResults=averageResults, svm_model_sfselect=svm_model_sfselect, fixedRangeHist=fixedRangeHist,removeFixedSites=removeFixedSites, selectionPredictor=selectionPredictor) for xr in x.T])
+                    return ([Estimate.getEstimate(x=xr, method=method, bins=bins, n=n, normalizeTajimaD=normalizeTajimaD, averageResults=averageResults, svm_model_sfselect=svm_model_sfselect, fixedRangeHist=fixedRangeHist,removeFixedSites=removeFixedSites) for xr in x.T])
             elif len(x.shape)==1: # if x is L-dim vector of AF
                 if method=='SFSelect':
                     if x_XP_pop is not None:
@@ -134,38 +134,33 @@ class Estimate:
         if method=='all':
             return ({
                 'w': Estimate.getEstimate(x=x, n=n, snp=snp, method='watterson',
-                                          bins=bins, normalizeTajimaD=True,
+                                          bins=bins,
                                           averageResults=averageResults,
                                           svm_model_sfselect=svm_model_sfselect,
                                           fixedRangeHist=fixedRangeHist,
-                                          removeFixedSites=removeFixedSites,
-                                          selectionPredictor=selectionPredictor),
+                                          removeFixedSites=removeFixedSites),
                 'pi': Estimate.getEstimate(x=x, n=n, snp=snp, method='pi',
-                                           bins=bins, normalizeTajimaD=True,
+                                           bins=bins,
                                            averageResults=averageResults,
                                            svm_model_sfselect=svm_model_sfselect,
                                            fixedRangeHist=fixedRangeHist,
-                                           removeFixedSites=removeFixedSites,
-                                           selectionPredictor=selectionPredictor),
+                                           removeFixedSites=removeFixedSites),
 
-                '{}D'.format(('', '-')[selectionPredictor]): Estimate.getEstimate(x=x, n=n, snp=snp, method='tajimaD',
-                                                                                  bins=bins, normalizeTajimaD=True,
-                                                                                  averageResults=averageResults,
-                                                                                  svm_model_sfselect=svm_model_sfselect,
-                                                                                  fixedRangeHist=fixedRangeHist,
-                                                                                  removeFixedSites=removeFixedSites,
-                                                                                  selectionPredictor=selectionPredictor),
-                '{}H'.format(('', '-')[selectionPredictor]): Estimate.getEstimate(x=x, n=n, snp=snp, method='H',
-                                                                                  bins=bins, normalizeTajimaD=True,
-                                                                                  averageResults=averageResults,
-                                                                                  svm_model_sfselect=svm_model_sfselect,
-                                                                                  fixedRangeHist=fixedRangeHist,
-                                                                                  removeFixedSites=removeFixedSites,
-                                                                                  selectionPredictor=selectionPredictor),
+                'D': Estimate.getEstimate(x=x, n=n, snp=snp, method='tajimaD',
+                                          bins=bins, normalizeTajimaD=normalizeTajimaD,
+                                          averageResults=averageResults,
+                                          svm_model_sfselect=svm_model_sfselect,
+                                          fixedRangeHist=fixedRangeHist,
+                                          removeFixedSites=removeFixedSites),
+                'H': Estimate.getEstimate(x=x, n=n, snp=snp, method='H',
+                                          bins=bins,
+                                          averageResults=averageResults,
+                                          svm_model_sfselect=svm_model_sfselect,
+                                          fixedRangeHist=fixedRangeHist,
+                                          removeFixedSites=removeFixedSites),
                 'SFSelect': Estimate.getEstimate(x=x, n=n, snp=snp, method='SFSelect', bins=bins, normalizeTajimaD=True,
                                                  averageResults=averageResults, svm_model_sfselect=svm_model_sfselect,
-                                                 fixedRangeHist=fixedRangeHist, removeFixedSites=removeFixedSites,
-                                                 selectionPredictor=selectionPredictor)})
+                                                 fixedRangeHist=fixedRangeHist, removeFixedSites=removeFixedSites)})
 
         if safs is None:return  None
         if method is 'tajimaD':
@@ -177,10 +172,8 @@ class Estimate:
                     m = snp.shape[1]
                 sig = Estimate.tajimaDstd(n=n, m=m)
                 w /= sig
-            if selectionPredictor:  w*=-1 
         elif method is 'H':
             w = Estimate.getWeights(safs, 'pi', n) - Estimate.getWeights(safs, 'faywu', n)
-            if selectionPredictor:  w*=-1
         else:
             w=Estimate.getWeights(safs, method, n)
         return safs.dot(w)

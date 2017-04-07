@@ -206,7 +206,6 @@ def puComment(fig, comment):
     if comment is not None:
         fig.text(.05, .05, 'Comment: ' + comment, fontsize=26, color='red')
 
-
 def scanGenome(genome, f=lambda x: x.mean(), uf=None,winSize=50000, step=None, nsteps=5, minSize=None):
     """
     Args:
@@ -220,12 +219,12 @@ def scanGenome(genome, f=lambda x: x.mean(), uf=None,winSize=50000, step=None, n
     Returns:
     """
     if len(genome.shape)>1:
-        # if genome.shape[1]>1:
         return genome.apply(lambda x: scanGenome(x,f=f,uf=uf,winSize=winSize,step=step,nsteps=nsteps,minSize=minSize))
+
     if step is None:step=winSize/nsteps
     df = genome.groupby(level='CHROM').apply(lambda ch: scanChromosome(ch.loc[ch.name],f,uf,winSize,step,minSize))
-    if minSize is not None:
-        df=df[scanGenome(genome,f=len,winSize=winSize,step=step)>=minSize]
+    #if minSize is not None:
+        #df=df[scanGenome(genome,f=len,winSize=winSize,step=step)>=minSize]
     return df
 
 def scanChromosome(x,f,uf,winSize,step,minSize):
@@ -970,6 +969,10 @@ class VCF:
         a.columns.names=['REP','GEN','READ']
         return a
 
+def polymorphix(x, MAF=0.01,index=False):
+    I=(x>=MAF)&(x<=1-MAF)
+    if index: return I
+    return x[I]
 def polymorphic(data, minAF=0.01,mincoverage=10,index=True):
     def poly(x):return (x>=minAF)&(x<=1-minAF)
     C,D=data.xs('C',level='READ',axis=1),data.xs('D',level='READ',axis=1)
