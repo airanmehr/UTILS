@@ -132,7 +132,12 @@ class Estimate:
             return None
 
         if method=='all':
+            if removeFixedSites:
+                m=x[(x>0)&(x<1)].size
+            else:
+                m=x.size
             return ({
+                'm':m,
                 'w': Estimate.getEstimate(x=x, n=n, snp=snp, method='watterson',
                                           bins=bins,
                                           averageResults=averageResults,
