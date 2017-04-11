@@ -66,7 +66,15 @@ class pval:
 
     @staticmethod
     def gammachi2Test(x,df):return -st.chi2.logsf(x,df), -st.gamma.logsf(x,df/2.,scale=2.),-st.gamma.logsf(x/df,df/2.,scale=2./df)
-
+    @staticmethod
+    def fisher(a):
+        return robjects.r(
+            'fisher.test(rbind(c({},{}),c({},{})), alternative="less")$p.value'.format(a[0, 0], a[0, 1], a[1, 0], a[1, 1]))[
+            0]
+    @staticmethod
+    def fisher3by2(a):
+        return robjects.r('fisher.test(rbind(c({},{}),c({},{}),c({},{})), alternative="less")$p.value'.format(
+                    a[0, 0], a[0, 1], a[1, 0], a[1, 1], a[2, 0], a[2, 1]))[0]
     @staticmethod
     def empirical(A,Z,positiveStatistic=True):#Z is null scores
         if positiveStatistic:
@@ -291,10 +299,7 @@ def scanChromosomeSNP(x,f,winSize,step):
     bins.index=x.index[bins.index]
     if bins.shape[0]:return bins.loc[x.name]
 
-def fisher(a):
-    return robjects.r(
-        'fisher.test(rbind(c({},{}),c({},{})), alternative="less")$p.value'.format(a[0, 0], a[0, 1], a[1, 0], a[1, 1]))[
-        0]
+
 
 
 def CMH(x, num_rep=3):
@@ -1023,8 +1028,10 @@ def filterGap2(a,assempbly=38,pad=50000):
             tmp=aa[(aa.index >= r.start) & (aa.index<=r.end)]
             if tmp.shape[0]:
                 agap+=[pd.concat([tmp],keys=[n])]
-    agap=pd.concat(agap);agap.index.names=['CHROM','POS']
-    a.loc[agap.index]=None;a=a.dropna()
+    agap=[x for x in agap if x is not None]
+    if len(agap):
+        agap=pd.concat(agap);agap.index.names=['CHROM','POS']
+        a.loc[agap.index,:]=None;#a=a.dropna()
     return a
 
 def get_gap(assempbly=38,pad=50000):
