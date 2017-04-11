@@ -1005,7 +1005,7 @@ def normalizeIHS(a,field=None):
 
 def filterGap(a,assempbly=38,pad=50000):
     gap=pd.read_csv(dataPath+'Human/hg{}.gap'.format(assempbly),sep='\t')[['chrom','chromStart','chromEnd']].rename(columns={'chrom':'CHROM','chromStart':'start','chromEnd':'end'}).reset_index()
-    gap.start-=pad;gap.end+=pad;gap.start[gap.start<0]=0
+    gap.start-=pad;gap.end+=pad;gap.loc[gap.start<0,'start']=0
     gap.CHROM=gap.CHROM.apply(lambda x: x[3:])
     gap=BED.intersection(a,gap,dfa_interval_name=a.name,dfb_interval_name='index').rename(columns={'start':'POS'})
     gap.index=map(INT,gap.index);gap.index.name='CHROM'
