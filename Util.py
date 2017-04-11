@@ -66,7 +66,15 @@ class pval:
 
     @staticmethod
     def gammachi2Test(x,df):return -st.chi2.logsf(x,df), -st.gamma.logsf(x,df/2.,scale=2.),-st.gamma.logsf(x/df,df/2.,scale=2./df)
-
+    @staticmethod
+    def fisher(a):
+        return robjects.r(
+            'fisher.test(rbind(c({},{}),c({},{})), alternative="less")$p.value'.format(a[0, 0], a[0, 1], a[1, 0], a[1, 1]))[
+            0]
+    @staticmethod
+    def fisher3by2(a):
+        return robjects.r('fisher.test(rbind(c({},{}),c({},{}),c({},{})), alternative="less")$p.value'.format(
+                    a[0, 0], a[0, 1], a[1, 0], a[1, 1], a[2, 0], a[2, 1]))[0]
     @staticmethod
     def empirical(A,Z,positiveStatistic=True):#Z is null scores
         if positiveStatistic:
@@ -291,10 +299,7 @@ def scanChromosomeSNP(x,f,winSize,step):
     bins.index=x.index[bins.index]
     if bins.shape[0]:return bins.loc[x.name]
 
-def fisher(a):
-    return robjects.r(
-        'fisher.test(rbind(c({},{}),c({},{})), alternative="less")$p.value'.format(a[0, 0], a[0, 1], a[1, 0], a[1, 1]))[
-        0]
+
 
 
 def CMH(x, num_rep=3):
@@ -1006,6 +1011,25 @@ def filterGap(a,assempbly=38,pad=50000):
     gap.index=map(INT,gap.index);gap.index.name='CHROM'
     gap=gap.set_index('POS',append=True)[a.name].sort_index()
     a.loc[gap.index]=None;a=a.dropna()
+    return a
+
+def filterGap2(a,assempbly=38,pad=50000):
+    gap=pd.read_csv(dataPath+'Human/hg{}.gap'.format(assempbly),sep='\t')[['chrom','chromStart','chromEnd']].rename(columns={'chrom':'CHROM','chromStart':'start','chromEnd':'end'}).reset_index()
+    gap.start-=pad;gap.end+=pad;gap.loc[gap.start<0,'start']=0
+    gap.CHROM=gap.CHROM.apply(lambda x: INT(x[3:]));gap=gap.set_index('CHROM')
+    agap=[]
+    for n,g in gap.groupby(level=0):
+        if not n  in a.index.get_level_values('CHROM'): continue
+        aa=a.loc[n]
+        if not aa.shape[0] : continue
+        for _,r in g.iterrows():
+            tmp=aa[(aa.index >= r.start) & (aa.index<=r.end)]
+            if tmp.shape[0]:
+                agap+=[pd.concat([tmp],keys=[n])]
+    agap=[x for x in agap if x is not None]
+    if len(agap):
+        agap=pd.concat(agap);agap.index.names=['CHROM','POS']
+        a.loc[agap.index,:]=None;#a=a.dropna()
     return a
 
 def get_gap(assempbly=38,pad=50000):
