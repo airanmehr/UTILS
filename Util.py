@@ -1002,12 +1002,29 @@ def normalizeIHS(a,field=None):
 
 def filterGap(a,assempbly=38,pad=50000):
     gap=pd.read_csv(dataPath+'Human/hg{}.gap'.format(assempbly),sep='\t')[['chrom','chromStart','chromEnd']].rename(columns={'chrom':'CHROM','chromStart':'start','chromEnd':'end'}).reset_index()
-    gap.start-=pad;gap.end+=pad;gap.start[gap.start<0]=0
+    gap.start-=pad;gap.end+=pad;gap.loc[gap.start<0,'start']=0
     gap.CHROM=gap.CHROM.apply(lambda x: x[3:])
     gap=BED.intersection(a,gap,dfa_interval_name=a.name,dfb_interval_name='index').rename(columns={'start':'POS'})
     gap.index=map(INT,gap.index);gap.index.name='CHROM'
     gap=gap.set_index('POS',append=True)[a.name].sort_index()
     a.loc[gap.index]=None;a=a.dropna()
+    return a
+
+def filterGap2(a,assempbly=38,pad=50000):
+    gap=pd.read_csv(dataPath+'Human/hg{}.gap'.format(assempbly),sep='\t')[['chrom','chromStart','chromEnd']].rename(columns={'chrom':'CHROM','chromStart':'start','chromEnd':'end'}).reset_index()
+    gap.start-=pad;gap.end+=pad;gap.loc[gap.start<0,'start']=0
+    gap.CHROM=gap.CHROM.apply(lambda x: INT(x[3:]));gap=gap.set_index('CHROM')
+    agap=[]
+    for n,g in gap.groupby(level=0):
+        if not n  in a.index.get_level_values('CHROM'): continue
+        aa=a.loc[n]
+        if not aa.shape[0] : continue
+        for _,r in g.iterrows():
+            tmp=aa[(aa.index >= r.start) & (aa.index<=r.end)]
+            if tmp.shape[0]:
+                agap+=[pd.concat([tmp],keys=[n])]
+    agap=pd.concat(agap);agap.index.names=['CHROM','POS']
+    a.loc[agap.index]=None;a=a.dropna()
     return a
 
 def get_gap(assempbly=38,pad=50000):
