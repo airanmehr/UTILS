@@ -938,12 +938,14 @@ class VCF:
 
     @staticmethod
     def subset(VCFin, pop,panel,chrom):
+        print pop
         bcf='/home/arya/bin/bcftools/bcftools'
         assert len(pop)
         if pop=='ALL' or pop is None:return VCFin
-        print 'Creating a vcf.gz file for individuals of {} population'.format(pop)
         fileSamples='{}.{}.chr{}'.format(panel,pop,chrom)
         fileVCF=VCFin.replace('.vcf.gz','.{}.vcf.gz'.format(pop))
+        if os.path.exists(fileVCF): return fileVCF
+        print 'Creating a vcf.gz file for individuals of {} population'.format(pop)
         os.system('grep {} {} | cut -f1 >{}'.format(pop,panel,fileSamples))
         cmd="{} view -S {} {} | {} filter -i \"N_ALT=1 & TYPE='snp'\" -O z -o {}".format(bcf,fileSamples,VCFin,bcf,fileVCF)
         os.system(cmd)
