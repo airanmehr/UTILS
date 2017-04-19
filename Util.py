@@ -860,15 +860,24 @@ class VCF:
         return  pd.read_table(fname,sep='\t').dropna(axis=1)
 
     @staticmethod
-    def getDataframeColumns(fin,panel=None):
+    def getDataframeColumns(fin,panel=None,haploid=False):
         cols=[]
         if panel is not None:
             panel=VCF.loadPanel(panel).set_index('sample')[['super_pop','pop']]
-            f=lambda x: tuple(panel.loc[x].tolist())
-            for x in VCF.headerSamples(fin):cols+=[f(x)+( x,'A'),f(x)+(x,'B')]
+            def f(x):
+                try:
+                    return tuple(panel.loc[x].tolist())
+                except:
+                    return ('NAs','NAp')
+            for x in VCF.headerSamples(fin):
+                if haploid:
+                    cols+=[f(x)+( x,'A')]
+                else:
+                    cols+=[f(x)+( x,'A'),f(x)+(x,'B')]
             cols=pd.MultiIndex.from_tuples(cols,names=['SPOP', 'POP', 'ID','HAP'])
         else:
-            for x in VCF.headerSamples(fin):cols+=[( x,'A'),(x,'B')]
+            for x in VCF.headerSamples(fin):
+                cols+=[( x,'A'),(x,'B')]
             cols=pd.MultiIndex.from_tuples(cols,names=[ 'ID','HAP'])
         return cols
 
@@ -876,34 +885,39 @@ class VCF:
     def getDataframe(CHROM,start=None,end=None,
                      fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
                      bcftools="/home/arya/bin/bcftools/bcftools",
-                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel'):
+                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',haploid=False):
         reg=getRegionPrameter(CHROM,start,end)
         fin=fin.format(CHROM)
         cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | tr '|' '\\t'|  tr '/' '\\t' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
         csv=Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].split('\n')
-        df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5)).astype(int)
+        df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5))#.astype(int)
+        df[df=='.']=None;
+        try:
+            df=df.astype(int)
+        except:
+            df=df.astype(float)
         df.index.names=['CHROM','POS', 'ID', 'REF', 'ALT']
-        df.columns=VCF.getDataframeColumns(fin,panel)
+        df.columns=VCF.getDataframeColumns(fin,panel,haploid)
         return df
 
     @staticmethod
     def computeFreqs(CHROM,start=None,end=None,
                      fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
-                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',hap=False,genotype=False):
+                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',hap=False,genotype=False,haploid=False):
         try:
-            a=VCF.getDataframe(CHROM,start,end,fin=fin,panel=panel)
+            a=VCF.getDataframe(CHROM,start,end,fin=fin,panel=panel,haploid=haploid)
             if genotype: return a.groupby(level=[0,1,2],axis=1).sum()
             if hap: return a
             if panel is not None:
                 return pd.concat([a.mean(1).rename('ALL'),a.groupby(level=0,axis=1).mean(),a.groupby(level=1,axis=1).mean()],1)
             else:
                 return a.mean(1).rename('ALL')
-        except:
+        except :
             return None
     @staticmethod
     def computeFreqsChromosome(CHROM,
                        fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
-                       panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',winSize=100000,hap=False,genotype=False,save=False):
+                       panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',winSize=100000,hap=False,genotype=False,save=False,haploid=False):
         CHROM=INT(CHROM)
         #if CHROM == 'Y': fin=dataPath1000GP+'ALL.chr{}.phase3_integrated_v1b.20130502.genotypes.vcf.gz'
         #if CHROM == 'X': fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v1b.20130502.genotypes.vcf.gz'
@@ -918,7 +932,7 @@ class VCF:
                 cmd='zgrep -v "#" {} | cut -f2 | tail -n1'.format(fin.format(CHROM))
                 L= int(Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].strip())
         print 'Converting Chrom {}. ({} Mbp Long)'.format(CHROM,int(L/1e6))
-        a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel,hap=hap,genotype=genotype) for start in xrange(0,ceilto(L,winSize),winSize)]
+        a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel,hap=hap,genotype=genotype,haploid=haploid) for start in xrange(0,ceilto(L,winSize),winSize)]
         a = intIndex(uniqIndex(pd.concat([x  for x in a if x is not None]),subset=['CHROM','POS']))
         if save:
             if hap: suff='.hap'
@@ -928,7 +942,11 @@ class VCF:
         return  a
 
     @staticmethod
-    def createGeneticMap(VCFin, chrom,gmpath=dataPath+'Human/map/GRCh37/plink.chr{}.GRCh37.map'):
+    def createGeneticMap(VCFin, chrom,gmpath=dataPath+'Human/map/GRCh37/plink.chr{}.GRCh37.map',recompute=False):
+        if os.path.exists(VCFin+'.map') and not recompute:
+            print 'map file exist!'
+            return
+        print 'Computing Genetic Map for ', VCFin
         gm = pd.read_csv(gmpath.format(chrom), sep='\t', header=None,names=['CHROM','ID','GMAP','POS'])
         df = pd.DataFrame(VCF.getField(VCFin).rename('POS'))
         df['GMAP'] = np.interp(df['POS'].tolist(), gm['POS'].tolist(),gm['GMAP'].tolist())
@@ -937,16 +955,19 @@ class VCF:
         df[['CHROM','ID','GMAP','POS']].to_csv(VCFin+'.map',sep='\t',header=None,index=None)
 
     @staticmethod
-    def subset(VCFin, pop,panel,chrom):
+    def subset(VCFin, pop,panel,chrom,fileSamples=None,recompute=False):
         print pop
         bcf='/home/arya/bin/bcftools/bcftools'
         assert len(pop)
         if pop=='ALL' or pop is None:return VCFin
-        fileSamples='{}.{}.chr{}'.format(panel,pop,chrom)
         fileVCF=VCFin.replace('.vcf.gz','.{}.vcf.gz'.format(pop))
-        if os.path.exists(fileVCF): return fileVCF
+        if os.path.exists(fileVCF) and not recompute:
+            print 'vcf exits!'
+            return fileVCF
         print 'Creating a vcf.gz file for individuals of {} population'.format(pop)
-        os.system('grep {} {} | cut -f1 >{}'.format(pop,panel,fileSamples))
+        if fileSamples is None:
+            fileSamples='{}.{}.chr{}'.format(panel,pop,chrom)
+            os.system('grep {} {} | cut -f1 >{}'.format(pop,panel,fileSamples))
         cmd="{} view -S {} {} | {} filter -i \"N_ALT=1 & TYPE='snp'\" -O z -o {}".format(bcf,fileSamples,VCFin,bcf,fileVCF)
         os.system(cmd)
         return fileVCF
