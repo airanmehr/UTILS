@@ -1028,8 +1028,8 @@ def filterGap2(a,assempbly=38,pad=50000):
                 agap+=[pd.concat([tmp],keys=[n])]
     agap=[x for x in agap if x is not None]
     if len(agap):
-        agap=pd.concat(agap);agap.index.names=['CHROM','POS']
-        a.loc[agap.index,:]=None;#a=a.dropna()
+        agap=pd.concat(agap).sort_index();agap.index.names=['CHROM','POS']
+        a= a.drop(agap.index)
     return a
 
 def get_gap(assempbly=38,pad=50000):
