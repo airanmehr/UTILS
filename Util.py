@@ -499,11 +499,13 @@ class BED:
         interval=Interval.copy(True)
         hasChr=False
         if 'chr' in str(interval.CHROM.iloc[0]): hasChr=True
-        if not interval.CHROM.astype(str).apply(lambda x:'chr' in x).sum():
+        if not interval.CHROM.astype(str).apply(lambda x:'chr' in x).sum() and hgFrom !=37:
             interval.CHROM='chr'+interval.CHROM.apply(convertToIntStr)
         interval.start=interval.start.astype(int)
         interval.end=interval.end.astype(int)
-        chainfile = "/home/arya/CrossMap-0.2.5/chains/hg{}ToHg{}.over.chain.gz".format(hgFrom, hgTo)
+        hgFrom=('hg{}'.format(hgFrom),'GRCh37')[hgFrom==37]
+        hgTo=('Hg{}'.format(hgTo),'GRCh37')[hgTo==37]
+        chainfile = "/home/arya/CrossMap-0.2.5/chains/{}To{}.over.chain.gz".format(hgFrom, hgTo)
         in_file=home+'xmap.in.tmp'
         out_file=home+'xmap.out.tmp'
         import subprocess
@@ -515,12 +517,14 @@ class BED:
         maped.ID=maped.ID.astype('int')
         maped=maped.set_index('ID').sort_index()
         maped=pd.concat([interval,maped],1,keys=[hgFrom,hgTo])
+        print maped
         def ff(x):
             try:return x[3:]
             except:return x
-        if not hasChr:
-            maped[(hgFrom,'CHROM')]=maped[(hgFrom,'CHROM')].apply(lambda x: INT(x[3:]))
-            maped[(hgTo,'CHROM')]=maped[(hgTo,'CHROM')].apply(lambda x: INT(ff(x)))
+        fff=(lambda x:x[3:],lambda x:x)['chr' not in str(maped[hgFrom].CHROM.iloc[0])]
+        maped[(hgFrom,'CHROM')]=maped[(hgFrom,'CHROM')].apply(lambda x: INT(fff(x)))
+        fff=(lambda x:x[3:],lambda x:x)['chr' not in str(maped[hgTo].CHROM.iloc[0])]
+        maped[(hgTo,'CHROM')]=maped[(hgTo,'CHROM')].apply(lambda x: INT(ff(x)))
         maped.sort_values([(hgFrom,'CHROM'),(hgFrom,'start')])
         maped=maped.set_index((hgFrom,'CHROM'))
         maped.index.name='CHROM'
