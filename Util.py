@@ -851,6 +851,10 @@ def getRegionPrameter(CHROM,start,end):
 
 class VCF:
     @staticmethod
+    def getN(panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel'):
+        pan=VCF.loadPanel(panel)
+        return pd.concat([pan.groupby('pop').size(),pan.groupby('super_pop').size(),pd.Series({'ALL':pan.shape[0]})])
+    @staticmethod
     def getField(fname,field='POS'):
         fields={'CHROM':1,'POS':2,'ID':3}
         cmd="zgrep -v '#' {} | cut -f{}".format(fname,fields[field])
@@ -870,19 +874,21 @@ class VCF:
 
     @staticmethod
     def getDataframeColumns(fin,panel=None,haploid=False):
+        def f(x):
+            try:return tuple(panel.loc[x].tolist())
+            except:return ('NAs','NAp')
         cols=[]
         if panel is not None:
-            panel=VCF.loadPanel(panel).set_index('sample')[['super_pop','pop']]
-            def f(x):
-                try:
-                    return tuple(panel.loc[x].tolist())
-                except:
-                    return ('NAs','NAp')
+            load=lambda x: VCF.loadPanel(x).set_index('sample')[['super_pop','pop']]
+            if isinstance(panel,str): panel=[panel]
+            else: panel=panel.tolist()
+            panel= pd.concat(map(load,panel))
             for x in VCF.headerSamples(fin):
                 if haploid:
                     cols+=[f(x)+( x,'A')]
                 else:
                     cols+=[f(x)+( x,'A'),f(x)+(x,'B')]
+
             cols=pd.MultiIndex.from_tuples(cols,names=['SPOP', 'POP', 'ID','HAP'])
         else:
             for x in VCF.headerSamples(fin):
@@ -898,38 +904,62 @@ class VCF:
         reg=getRegionPrameter(CHROM,start,end)
         fin=fin.format(CHROM)
         cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | tr '|' '\\t'|  tr '/' '\\t' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
+        #cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
         csv=Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].split('\n')
         df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5))#.astype(int)
+
+        df.index.names=['CHROM','POS', 'ID', 'REF', 'ALT']
+        df.columns=VCF.getDataframeColumns(fin,panel,haploid)
         df[df=='.']=None;
+        if haploid:df=df.replace({'0/0':'0','1/1':'1','0/1':'1'})
         try:
             df=df.astype(int)
         except:
             df=df.astype(float)
-        df.index.names=['CHROM','POS', 'ID', 'REF', 'ALT']
-        df.columns=VCF.getDataframeColumns(fin,panel,haploid)
         return df
 
     @staticmethod
     def computeFreqs(CHROM,start=None,end=None,
                      fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
-                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',hap=False,genotype=False,haploid=False):
+                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',
+                     verbose=0,hap=False,genotype=False,haploid=False):
         try:
-            a=VCF.getDataframe(CHROM,start,end,fin=fin,panel=panel,haploid=haploid)
-            if genotype: return a.groupby(level=[0,1,2],axis=1).sum()
-            if hap: return a
-            if panel is not None:
-                return pd.concat([a.mean(1).rename('ALL'),a.groupby(level=0,axis=1).mean(),a.groupby(level=1,axis=1).mean()],1)
+            if verbose:
+                import sys
+                print 'chr{}:{:.1f}-{:.1f}'.format(CHROM,start/1e6,end/1e6); sys.stdout.flush()
+            a=VCF.getDataframe(CHROM,int(start),int(end),fin=fin,panel=panel,haploid=haploid)
+            if panel.size==1:
+                a=pd.concat([a],1,keys=panel.index)
+
             else:
-                return a.mean(1).rename('ALL')
+                a=a.T.sort_index()
+                a['DS']='ALL';a.loc[['Sick','Healthy'],'DS']='KGZ'
+                a=a.set_index('DS',append=True).reorder_levels([4,0,1,2,3]).sort_index().T
+            if hap: return a
+            elif genotype: return a.groupby(level=[0,1,2],axis=1).sum()
+            else:
+                if panel is not None:
+                    return pd.concat([a.groupby(level=0,axis=1).mean(),a.groupby(level=1,axis=1).mean(),a.groupby(level=2,axis=1).mean()],1)
+                else:
+                    return a.mean(1).rename('ALL')
         except :
             return None
     @staticmethod
-    def computeFreqsChromosome(CHROM,
-                       fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
-                       panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',winSize=100000,hap=False,genotype=False,save=False,haploid=False):
+    def computeFreqsChromosome(CHROM,fin,panel,verbose=0,winSize=500000,haplotype=False,genotype=False,save=False,haploid=False,nProc=1):
+        print """
+        :param CHROM: {}
+        :param fin:  {}
+        :param panel:  {}
+        :param verbose: {}
+        :param winSize: {}
+        :param haplotype: {}
+        :param genotype: {}
+        :param save: {}
+        :param haploid: {}
+        :param nProc: {}
+         ***************************************
+        """.format(CHROM,fin,panel,verbose,winSize,haplotype,genotype,save,haploid,nProc)
         CHROM=INT(CHROM)
-        #if CHROM == 'Y': fin=dataPath1000GP+'ALL.chr{}.phase3_integrated_v1b.20130502.genotypes.vcf.gz'
-        #if CHROM == 'X': fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v1b.20130502.genotypes.vcf.gz'
         import vcf
         try:
             L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs['chr{}'.format(CHROM)].length
@@ -940,11 +970,14 @@ class VCF:
             except:
                 cmd='zgrep -v "#" {} | cut -f2 | tail -n1'.format(fin.format(CHROM))
                 L= int(Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].strip())
-        print 'Converting Chrom {}. ({} Mbp Long)'.format(CHROM,int(L/1e6))
-        a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel,hap=hap,genotype=genotype,haploid=haploid) for start in xrange(0,ceilto(L,winSize),winSize)]
+        print 'Converting Chrom {}. ({}, {} Mbp Long)'.format(CHROM,L,int(L/1e6))
+        #a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel,hap=haplotype,genotype=genotype,haploid=haploid,verbose=verbose) for start in xrange(0,ceilto(L,winSize),winSize)]
+        args=map(lambda start: (CHROM,start,fin,panel,haplotype,genotype,haploid,verbose,winSize), range(0,ceilto(L,winSize),winSize))
+        from multiprocessing import Pool
+        a=Pool(nProc).map(computeFreqsHelper,args)
         a = intIndex(uniqIndex(pd.concat([x  for x in a if x is not None]),subset=['CHROM','POS']))
         if save:
-            if hap: suff='.hap'
+            if haplotype: suff='.hap'
             elif genotype: suff='.gt'
             else: suff=''
             a.to_pickle(fin.format(CHROM).replace('.vcf.gz','{}.df'.format(suff)))
@@ -1069,3 +1102,7 @@ def loadFst(fname):
     a.CHROM=a.CHROM.replace({'22':22});a=a.set_index(['CHROM','POS']).sort_index().iloc[:,0].rename('Fst')
     a=a.loc[range(1,23)]
     return a[a>0]
+def computeFreqsHelper(args):
+    CHROM,start,fin,panel,hap,genotype,haploid,verbose,winSize=args
+    end=start+winSize-1
+    return VCF.computeFreqs(CHROM=CHROM,start=start,end=end,fin=fin,panel=panel,verbose=verbose,hap=hap,genotype=genotype,haploid=haploid)
