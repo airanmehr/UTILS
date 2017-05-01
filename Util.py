@@ -42,6 +42,9 @@ def freq(X,fold=False):
         x=X.C/X.D
         if fold:x[x>0.5]=1-x[x>0.5]
         return x
+def pca(a,n=2):
+    l,v=np.linalg.eig(a)
+    return pd.DataFrame(v[:,:n],index=a.index)
 class pval:
     #c=utl.scanGenome(a,f=lambda x: utl.chi2SampleMeanPval(x,1))
     @staticmethod
