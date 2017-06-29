@@ -406,10 +406,9 @@ def setTicks(df):
     plt.xlabel('')
 
 
-def savefig(name, dpi,path=utl.paperFiguresPath):
-    # plt.tight_layout()
-    plt.savefig(path+ name + '.pdf');
-    plt.savefig(path+ name + '.tiff', dpi=dpi)
+def savefig(name, dpi,path=utl.paperFiguresPath,extensions=['pdf','tiff']):
+    for e in extensions:
+        plt.savefig(path+ name + '.'+e, dpi=dpi)
 
 
 def plotQuantile(df, kde):
