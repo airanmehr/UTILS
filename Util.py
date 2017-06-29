@@ -545,9 +545,9 @@ class BED:
         return maped
 
 def createAnnotation(vcf ,db='BDGP5.75'):
-    snps=loadSNPID()
+    #snps=loadSNPID()
     import subprocess
-    fname=vcf.replace('.vcf','.SNPEFF.vcf')
+    fname=vcf.replace('.vcf','.SNPEFF.vcf').replace('.gz','')
     assert fname!=vcf
     cmd='java -Xmx4g -jar ~/bin/snpEff/snpEff.jar  -ud 0 -s snpeff.html {} {} | cut -f1-8 > {}'.format(db,vcf,fname)
     print cmd
@@ -567,7 +567,8 @@ def createAnnotation(vcf ,db='BDGP5.75'):
                         print >>fout, line
         uscols=[range(10),range(6)][x=='LOF']
         df=pd.read_csv(csv,sep='\t',usecols=uscols).set_index(['CHROM','POS']).apply(lambda x: x.astype('category'))
-        df.join(snps,rsuffix='_flybaseVCF').to_pickle(csv.replace('.csv','.df'))
+        df.to_pickle(csv.replace('.csv','.df'))
+        #df.join(snps,rsuffix='_flybaseVCF').to_pickle(csv.replace('.csv','.df'))
     saveAnnDataframe('ANN')
     saveAnnDataframe('LOF')
 
@@ -921,7 +922,6 @@ class VCF:
         #cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
         csv=Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].split('\n')
         df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5))#.astype(int)
-
         df.index.names=['CHROM','POS', 'ID', 'REF', 'ALT']
         df.columns=VCF.getDataframeColumns(fin,panel,haploid)
         df[df=='.']=None;
@@ -944,13 +944,12 @@ class VCF:
             a=VCF.getDataframe(CHROM,int(start),int(end),fin=fin,panel=panel,haploid=haploid)
             if panel.size==1:
                 a=pd.concat([a],1,keys=panel.index)
-
             else:
                 a=a.T.sort_index()
                 a['DS']='ALL';a.loc[['Sick','Healthy'],'DS']='KGZ'
                 a=a.set_index('DS',append=True).reorder_levels([4,0,1,2,3]).sort_index().T
             if hap: return a
-            elif genotype: return a.groupby(level=[0,1,2],axis=1).sum()
+            elif genotype: return a.groupby(level=[0,1,2,3],axis=1).sum()
             else:
                 if panel is not None:
                     return pd.concat([a.groupby(level=0,axis=1).mean(),a.groupby(level=1,axis=1).mean(),a.groupby(level=2,axis=1).mean()],1)
@@ -978,9 +977,9 @@ class VCF:
         try:
             L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs['chr{}'.format(CHROM)].length
         except:
-            L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs[str(CHROM)].length
             try:
-                L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs['chr{}'.format(CHROM)].length
+                L=vcf.Reader(open(fin.format(CHROM), 'r')).contigs[str(CHROM)].length
+                assert L!=None
             except:
                 cmd='zgrep -v "#" {} | cut -f2 | tail -n1'.format(fin.format(CHROM))
                 L= int(Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].strip())
