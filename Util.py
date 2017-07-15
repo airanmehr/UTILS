@@ -884,7 +884,7 @@ class VCF:
         return map(INT,VCF.header(fname)[9:])
 
     @staticmethod
-    def loadPanel(fname=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel'):
+    def loadPanel(fname='/home/arya/storage/Data/Human/Kyrgyz/KGZU+ALL/ALL.panel'):
         return  pd.read_table(fname,sep='\t').dropna(axis=1)
 
     @staticmethod
