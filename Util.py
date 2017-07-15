@@ -537,14 +537,15 @@ class BED:
         os.remove(out_file+'.unmap')
         return maped
 
-def createAnnotation(vcf ,db='BDGP5.75'):
+def createAnnotation(vcf ,db='BDGP5.75',computeSNPEFF=True):
     #snps=loadSNPID()
     import subprocess
     fname=vcf.replace('.vcf','.SNPEFF.vcf').replace('.gz','')
     assert fname!=vcf
-    cmd='java -Xmx4g -jar ~/bin/snpEff/snpEff.jar  -ud 0 -s snpeff.html {} {} | cut -f1-8 > {}'.format(db,vcf,fname)
-    print cmd
-    subprocess.call(cmd,shell=True)
+    if computeSNPEFF:
+        cmd='java -Xmx4g -jar ~/bin/snpEff/snpEff.jar  -ud 0 -s snpeff.html {} {} | cut -f1-8 > {}'.format(db,vcf,fname)
+        print cmd
+        subprocess.call(cmd,shell=True)
     import vcf
     def saveAnnDataframe(x='ANN'):
         print(x)
@@ -904,7 +905,7 @@ class VCF:
     def getDataframe(CHROM,start=None,end=None,
                      fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
                      bcftools="/home/arya/bin/bcftools/bcftools",
-                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',haploid=False):
+                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',haploid=False,dropDots=True):
         reg=getRegionPrameter(CHROM,start,end)
         fin=fin.format(CHROM)
         cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | tr '|' '\\t'|  tr '/' '\\t' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
@@ -913,7 +914,11 @@ class VCF:
         df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5))#.astype(int)
         df.index.names=['CHROM','POS', 'ID', 'REF', 'ALT']
         df.columns=VCF.getDataframeColumns(fin,panel,haploid)
-        df[df=='.']=None;
+        dropDots=False
+        if dropDots:
+            df[df=='.']=None;
+        else:
+            df=df.replace({'.':0})
         if haploid:df=df.replace({'0/0':'0','1/1':'1','0/1':'1'})
         try:
             df=df.astype(int)
@@ -931,6 +936,8 @@ class VCF:
                 import sys
                 print 'chr{}:{:.1f}-{:.1f}'.format(CHROM,start/1e6,end/1e6); sys.stdout.flush()
             a=VCF.getDataframe(CHROM,int(start),int(end),fin=fin,panel=panel,haploid=haploid)
+            if panel is None:
+                return a
             if panel.size==1:
                 a=pd.concat([a],1,keys=panel.index)
             else:
