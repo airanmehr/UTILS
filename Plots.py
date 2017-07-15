@@ -163,7 +163,9 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
             ax=plt.gca()
         if shade is not None:
             for _ ,  row in shade.iterrows():
-                ax.fill_between([row.gstart, row.gend], a.min(), a.max(), color='b', alpha=0.4)
+                MAX=a.replace({np.inf:None}).max()
+                MIN=a.replace({-np.inf:None}).min()
+                ax.fill_between([row.gstart, row.gend], MIN,MAX, color='b', alpha=0.4)
 
         ax.scatter(a.index, a, s=markerSize, c=c, alpha=0.8, edgecolors='none')
 

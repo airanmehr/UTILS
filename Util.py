@@ -45,6 +45,9 @@ def freq(X,fold=False):
 def pca(a,n=2):
     l,v=np.linalg.eig(a)
     return pd.DataFrame(v[:,:n],index=a.index)
+def pcaX(a,n=2):
+    from sklearn.decomposition import PCA
+    return pd.DataFrame(PCA(n_components=n).fit(a).transform(a),index=a.index)
 class pval:
     #c=utl.scanGenome(a,f=lambda x: utl.chi2SampleMeanPval(x,1))
     @staticmethod
@@ -99,7 +102,7 @@ class pval:
             if j==N: p[i]=1
         return -pd.concat([pd.Series(p,index=a.index).sort_index()/(Z.size+1),A[A==0]+1]).sort_index().apply(np.log10)
 
-def DataframetolaTexTable(df, alignment=None, fname=None):
+def DataframetolaTexTable(DF, alignment=None, fname=None,shade=False):
     """
     Args:
         df: pandas dataframe
@@ -110,7 +113,11 @@ def DataframetolaTexTable(df, alignment=None, fname=None):
         object: 
     Returns: latex table
     """
+    df=DF.copy(True)
     if alignment is None: alignment = list('c' * (df.shape[1]))
+    sh=('',r'\rowcolor{Gray} ')[shade]
+    df.iloc[:,0]=df.iloc[:,0].astype(str)
+    df.iloc[::2,0]=sh + df.iloc[::2,0]
     csv = r'\centering \begin{tabular}{' + '|'.join(alignment) + '}\n' + df.to_csv(sep='\t', index=False).replace('\t',
                                                                                                                   '\t&').replace(
         '\n', '\\\\\n').replace('\\\\\n', '\\\\\hline\n', 1) + r'\end{tabular}'
@@ -123,10 +130,10 @@ def files(mypath):
     return [f for f in os.listdir(mypath) if os.path.isfile(os.path.join(mypath, f))]
 
 def mergeIntervals(data):
-    csv = data.to_csv(header=None, sep='\t', index=None)
     csv = \
     Popen(['bedtools', 'merge', '-scores', 'max', '-i'], stdout=PIPE, stdin=PIPE, stderr=STDOUT).communicate(input=csv)[
         0]
+    csv = data.to_csv(header=None, sep='\t', index=None)
     df = pd.DataFrame(map(lambda x: x.split(), csv.split('\n')),
                       columns=['CHROM', 'start', 'end', data.columns[-1]]).dropna()
     df.iloc[:, -1] = df.iloc[:, -1].astype(float)
@@ -378,7 +385,7 @@ class BED:
             bed = bed.to_csv(header=False, sep='\t', path_or_buf=fname)
             return bed
     @staticmethod
-    def getIntervals(regions, padding=0):
+    def getIntervals(regions, padding=0,agg='max'):
         def get_interval(df, padding, merge=False):
             df = df.sort_index()
             df = pd.DataFrame([df.values, df.index.get_level_values('POS').values - padding,
@@ -400,7 +407,7 @@ class BED:
         df[['start','end','score']]=df[['start','end','score']].applymap(int)
         csv = df[['start', 'end', 'name', 'score']].to_csv(header=False, sep='\t')
         csv = \
-        Popen(['bedtools', 'merge', '-scores', 'max', '-i'], stdout=PIPE, stdin=PIPE, stderr=STDOUT).communicate(input=csv)[
+        Popen(['bedtools', 'merge', '-scores', agg, '-i'], stdout=PIPE, stdin=PIPE, stderr=STDOUT).communicate(input=csv)[
             0]
         df = pd.DataFrame(map(lambda x: x.split(), csv.split('\n'))).dropna()
         df.columns=['CHROM', 'start', 'end', 'score']
@@ -837,14 +844,18 @@ def uniqIndex(df,keep=False,subset=['CHROM','POS']): #keep can be first,last,Non
     return df.reset_index().drop_duplicates(subset=subset,keep=keep).set_index(names).sort_index()
 
 
-def mask(genome,CHROM=None,start=None,end=None,interval=None,pad=0,returnIndex=False):
+def mask(genome,CHROM=None,start=None,end=None,interval=None,pad=0,returnIndex=False,full=False):
     if interval is not None: CHROM, start, end = interval.CHROM, interval.start, interval.end
     start-=pad;end+=pad
     if returnIndex:
         return (genome.index.get_level_values('CHROM')==CHROM) & (genome.index.get_level_values('POS')>=start)&(genome.index.get_level_values('POS')<=end)
     else:
         tmp=genome.loc[CHROM]
-        return tmp[(tmp.index.get_level_values('POS')>=start)&(tmp.index.get_level_values('POS')<=end)]
+        tmp=tmp[(tmp.index.get_level_values('POS')>=start)&(tmp.index.get_level_values('POS')<=end)]
+        if full:
+            tmp=pd.concat([tmp],keys=[INT(CHROM)])
+            tmp.index.names=['CHROM','POS']
+        return tmp
 
 
 def getRegionPrameter(CHROM,start,end):
@@ -874,7 +885,7 @@ class VCF:
         return map(INT,VCF.header(fname)[9:])
 
     @staticmethod
-    def loadPanel(fname=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel'):
+    def loadPanel(fname='/home/arya/storage/Data/Human/Kyrgyz/KGZU+ALL/ALL.panel'):
         return  pd.read_table(fname,sep='\t').dropna(axis=1)
 
     @staticmethod
@@ -1043,11 +1054,13 @@ class VCF:
         a.columns.names=['REP','GEN','READ']
         return a
 
-def polymorphix(x, MAF=0.01,index=False):
+def polymorphixDF(a):
+    return a[polymorphix(a.mean(1),1e-15,True)]
+def polymorphix(x, MAF=1e-9,index=False):
     I=(x>=MAF)&(x<=1-MAF)
     if index: return I
     return x[I]
-def polymorphic(data, minAF=0.01,mincoverage=10,index=True):
+def polymorphic(data, minAF=1e-9,mincoverage=10,index=True):
     def poly(x):return (x>=minAF)&(x<=1-minAF)
     C,D=data.xs('C',level='READ',axis=1),data.xs('D',level='READ',axis=1)
     I=(C.sum(1)/D.sum(1)).apply(lambda x:poly(x)) & ((D>=mincoverage).mean(1)==1)
