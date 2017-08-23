@@ -409,7 +409,9 @@ def setTicks(df):
 
 
 def savefig(name, dpi,path=utl.paperFiguresPath,extensions=['pdf','tiff']):
+    import os
     for e in extensions:
+        os.system('rm -f '+ path+ name + '.'+e)
         plt.savefig(path+ name + '.'+e, dpi=dpi)
 
 

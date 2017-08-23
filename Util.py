@@ -12,7 +12,7 @@ import os
 
 try:
     import readline
-    import rpy2.robjects as robjects
+
 except:
     pass
 
@@ -44,7 +44,7 @@ def freq(X,fold=False):
         return x
 def pca(a,n=2):
     l,v=np.linalg.eig(a)
-    return pd.DataFrame(v[:,:n],index=a.index)
+    return pd.DataFrame(v[:,:n],index=a.index).applymap(lambda x: x.real)
 def pcaX(a,n=2):
     from sklearn.decomposition import PCA
     return pd.DataFrame(PCA(n_components=n).fit(a).transform(a),index=a.index)
@@ -68,17 +68,24 @@ class pval:
     def zpval(z):return -pd.Series(1-st.norm.cdf(pval.zscore(z).values)+ 1e-16,index=z.index).apply(np.log)
     @staticmethod
     def zgenome(x): return -pd.Series(1-st.norm.cdf(pval.zscoreChr(x).values)+ 1e-16,index=x.index).apply(np.log)
-    zgenome2tail= lambda x: -pd.Series(1-st.norm.cdf(pval.zscoreChr(x).abs().values)+ 1e-16,index=x.index).apply(np.log)
+
+    # @staticmethod
+    # zgenome2tail= lambda x: -pd.Series(1-st.norm.cdf(pval.zscoreChr(x).abs().values)+ 1e-16,index=x.index).apply(np.log)
+
+    @staticmethod
+    def z2tail(x):  return -pd.Series(1 - st.norm.cdf(pval.zscore(x).abs().values) + 1e-16, index=x.index).apply(np.log)
 
     @staticmethod
     def gammachi2Test(x,df):return -st.chi2.logsf(x,df), -st.gamma.logsf(x,df/2.,scale=2.),-st.gamma.logsf(x/df,df/2.,scale=2./df)
     @staticmethod
     def fisher(a):
+        import rpy2.robjects as robjects
         return robjects.r(
             'fisher.test(rbind(c({},{}),c({},{})), alternative="less")$p.value'.format(a[0, 0], a[0, 1], a[1, 0], a[1, 1]))[
             0]
     @staticmethod
     def fisher3by2(a):
+        import rpy2.robjects as robjects
         return robjects.r('fisher.test(rbind(c({},{}),c({},{}),c({},{})), alternative="less")$p.value'.format(
                     a[0, 0], a[0, 1], a[1, 0], a[1, 1], a[2, 0], a[2, 1]))[0]
     @staticmethod
@@ -110,7 +117,7 @@ def DataframetolaTexTable(DF, alignment=None, fname=None,shade=False):
         fname: path to save latex table
 
     Returns:
-        object: 
+        object:
     Returns: latex table
     """
     df=DF.copy(True)
@@ -224,6 +231,10 @@ def puComment(fig, comment):
     if comment is not None:
         fig.text(.05, .05, 'Comment: ' + comment, fontsize=26, color='red')
 
+def computeidf(a,winSize=50000,names=None):
+    if names==None: names=[a.name,'n']
+    return scanGenome(a.dropna(),f={names[0]:np.mean,names[1]:len},winSize=winSize)
+
 def scanGenome(genome, f=lambda x: x.mean(), uf=None,winSize=50000, step=None, nsteps=5, minSize=None):
     """
     Args:
@@ -255,7 +266,7 @@ def scanChromosome(x,f,uf,winSize,step,minSize):
         uf: is a universal function which returns a dataframe e.g. uf=lambda x: pd.DataFrame(np.random.rand(2,3))
     Returns:
     """
-    print 'Chromosome',x.name
+    # print 'Chromosome',x.name
     POS=x.index.get_level_values('POS')
     res=[]
     Bins=np.arange(max(0,roundto(POS.min()-winSize,base=step)), roundto(POS.max(),base=step),winSize)
@@ -313,6 +324,7 @@ def scanChromosomeSNP(x,f,winSize,step):
 
 
 def CMH(x, num_rep=3):
+    import rpy2.robjects as robjects
     r = robjects.r
     response_robj = robjects.IntVector(x.reshape(-1))
     dim_robj = robjects.IntVector([2, 2, num_rep])
@@ -359,6 +371,8 @@ def getContingencyTable(AllGenes, putativeList, myList):
 
 class BED:
     @staticmethod
+    def str(i):return '{}:{}-{}'.format(INT(i.CHROM),INT(i.start),INT(i.end))
+    @staticmethod
     def drop_duplicates(file_a,file_b,outfile=None):
         a=pd.concat([pd.read_csv(file_a,sep='\t',header=None),pd.read_csv(file_b,sep='\t',header=None)]).drop_duplicates().sort_values([0,1])
         if outfile is None: return a
@@ -385,7 +399,7 @@ class BED:
             bed = bed.to_csv(header=False, sep='\t', path_or_buf=fname)
             return bed
     @staticmethod
-    def getIntervals(regions, padding=0,agg='max'):
+    def getIntervals(regions, padding=0,agg='max',ann=None):
         def get_interval(df, padding, merge=False):
             df = df.sort_index()
             df = pd.DataFrame([df.values, df.index.get_level_values('POS').values - padding,
@@ -404,15 +418,59 @@ class BED:
         df=df.reset_index().sort_values(['CHROM','start']).set_index('CHROM')
         df['name'] = range(df.shape[0])
         df.score=(df.score*1000).round()
-        df[['start','end','score']]=df[['start','end','score']].applymap(int)
+        df[['start','end','name', 'score']]=df[['start','end','name','score']].applymap(int)
         csv = df[['start', 'end', 'name', 'score']].to_csv(header=False, sep='\t')
         csv = \
-        Popen(['bedtools', 'merge', '-scores', agg, '-i'], stdout=PIPE, stdin=PIPE, stderr=STDOUT).communicate(input=csv)[
+        Popen(['/home/arya/miniconda2/bin/bedtools', 'merge', '-nms', '-scores', agg, '-i'], stdout=PIPE, stdin=PIPE, stderr=STDOUT).communicate(input=csv)[
             0]
         df = pd.DataFrame(map(lambda x: x.split(), csv.split('\n'))).dropna()
-        df.columns=['CHROM', 'start', 'end', 'score']
+        df.columns=['CHROM', 'start', 'end', 'i', 'score']
         df.CHROM=df.CHROM.apply(INT)
-        df=df.dropna().set_index('CHROM').astype(int)
+        df=df.dropna().set_index('CHROM').applymap(INT)
+        df.score /= 1000
+        df['len'] = df.end - df.start
+        if ann is not None:
+            DF=ann.loc[regions.index]
+            if 'genes' in DF.columns:
+                x=df.reset_index().i.apply(lambda x: pd.Series(str(x).split(';')).astype(int)).stack().astype(int).reset_index(level=1,drop=True)
+                y=x.groupby(level=0).apply(lambda x: pd.DataFrame(DF.reset_index().loc[list(x)].genes.dropna().tolist()).stack().unique()).rename('genes')
+                df=df.reset_index().join(y)
+        return df
+
+    @staticmethod
+    def getIntervalsNew(regions, padding=0, agg='max'):
+        def get_interval(df, padding, merge=False):
+            df = df.sort_index()
+            df = pd.DataFrame([df.values, df.index.get_level_values('POS').values - padding,
+                               df.index.get_level_values('POS').values + padding], index=['score', 'start', 'end']).T
+            df.start = df.start.apply(lambda x: (x, 0)[x < 0])
+            df['len'] = df.end - df.start
+            return df.set_index('start')
+
+        if len(regions.shape) == 1:
+            df = regions.groupby(level=0).apply(lambda x: get_interval(x, padding)).reset_index().set_index('CHROM')
+        elif 'start' not in regions.columns:
+            df = regions.groupby(level=0).apply(lambda x: get_interval(x, padding)).reset_index().set_index('CHROM')
+        else:
+            df = regions.copy(True)
+            df.start -= padding;
+            df.end += padding
+            df.loc[df.start < 0, 'start'] = 0
+        df = df.reset_index().sort_values(['CHROM', 'start']).set_index('CHROM')
+        df['name'] = range(df.shape[0])
+        df.score = (df.score * 1000).round()
+        df[['start', 'end', 'score']] = df[['start', 'end', 'score']].applymap(int)
+        tmp = '/tmp/tmp.bed'
+        csv = df[['start', 'end', 'name']].to_csv(tmp,header=False, sep='\t')
+
+        print csv
+        csv = \
+            Popen(['bedtools', 'merge', '-i',tmp], stdout=PIPE, stdin=PIPE, stderr=STDOUT).communicate()[ 0]
+        df = pd.DataFrame(map(lambda x: x.split(), csv.split('\n'))).dropna()
+        print df
+        df.columns = ['CHROM', 'start', 'end', 'score']
+        df.CHROM = df.CHROM.apply(INT)
+        df = df.dropna().set_index('CHROM').astype(int)
         df.score /= 1000
         df['len'] = df.end - df.start
         return df
@@ -497,7 +555,7 @@ class BED:
         subprocess.call('bgzip {}'.format(fout_path),shell=True)
 
     @staticmethod
-    def xmap_bed(Interval,hgFrom=19, hgTo=38,removeXPchromSNPs=True):
+    def xmap_bed(Interval=None,variants=None,hgFrom=19, hgTo=38,removeXPchromSNPs=True,keepOnlyPos=False,chainPath=home+'storage/Data/Human/CrossMap-0.2.5/chains'):
         """
         Args:
             hgFrom: (int) assembly version eg: 19
@@ -506,8 +564,15 @@ class BED:
         Returns:
             out: dataframe with CHROM, start, end
         """
-        interval=Interval.copy(True)
+        if variants is not None:
+            Interval=variants.reset_index();
+            Interval['start']=Interval.POS;Interval['end']=Interval.POS
+        if keepOnlyPos:
+            interval=Interval[['CHROM','start','end']]
+        else:
+            interval=Interval.copy(True)
         hasChr=False
+        print interval
         if 'chr' in str(interval.CHROM.iloc[0]): hasChr=True
         if not interval.CHROM.astype(str).apply(lambda x:'chr' in x).sum() and hgFrom !=37:
             interval.CHROM='chr'+interval.CHROM.apply(convertToIntStr)
@@ -515,13 +580,14 @@ class BED:
         interval.end=interval.end.astype(int)
         hgFrom=('hg{}'.format(hgFrom),'GRCh37')[hgFrom==37]
         hgTo=('Hg{}'.format(hgTo),'GRCh37')[hgTo==37]
-        chainfile = "/home/arya/CrossMap-0.2.5/chains/{}To{}.over.chain.gz".format(hgFrom, hgTo)
+        chainfile = "{}/{}To{}.over.chain.gz".format(chainPath,hgFrom, hgTo)
         in_file=home+'xmap.in.tmp'
         out_file=home+'xmap.out.tmp'
         import subprocess
         with open(in_file ,'w') as f1:
             BED.save(interval.reset_index()[['CHROM','start','end','index']], fhandle=f1,intervalName='index')
-        cmd = "CrossMap.py bed  {} {} {}".format(chainfile, in_file, out_file)
+        cmd = "/home/arya/miniconda2/bin/CrossMap.py bed  {} {} {}".format(chainfile, in_file, out_file)
+        print cmd
         subprocess.call(cmd,shell=True)
         maped=pd.DataFrame(map(lambda x: x.split(), open(out_file).readlines()),columns=['CHROM','start','end','ID']).dropna()
         maped.ID=maped.ID.astype('int')
@@ -544,15 +610,17 @@ class BED:
         os.remove(out_file+'.unmap')
         return maped
 
-def createAnnotation(vcf ,db='BDGP5.75',computeSNPEFF=True):
+def createAnnotation(vcf ,db='BDGP5.75',computeSNPEFF=True,ud=0,snpeff_args=''):
     #snps=loadSNPID()
     import subprocess
     fname=vcf.replace('.vcf','.SNPEFF.vcf').replace('.gz','')
     assert fname!=vcf
     if computeSNPEFF:
-        cmd='java -Xmx4g -jar ~/bin/snpEff/snpEff.jar  -ud 0 -s snpeff.html {} {} | cut -f1-8 > {}'.format(db,vcf,fname)
+        cmd='java -Xmx4g -jar ~/bin/snpEff/snpEff.jar {} -ud {} -s snpeff.html {} {} | cut -f1-8 > {}'.format(snpeff_args,ud,db,vcf,fname)
         print cmd
         subprocess.call(cmd,shell=True)
+        print 'SNPEFF is Done'
+        # exit()
     import vcf
     def saveAnnDataframe(x='ANN'):
         print(x)
@@ -569,6 +637,10 @@ def createAnnotation(vcf ,db='BDGP5.75',computeSNPEFF=True):
         uscols=[range(10),range(6)][x=='LOF']
         df=pd.read_csv(csv,sep='\t',usecols=uscols).set_index(['CHROM','POS']).apply(lambda x: x.astype('category'))
         df.to_pickle(csv.replace('.csv','.df'))
+        try:
+            df[['Annotation', 'Annotation_Impact', 'Gene_Name', 'Feature_Type']].to_pickle(csv.replace('.csv','.sdf'))
+        except:
+            pass
         #df.join(snps,rsuffix='_flybaseVCF').to_pickle(csv.replace('.csv','.df'))
     saveAnnDataframe('ANN')
     saveAnnDataframe('LOF')
@@ -599,11 +671,27 @@ loadSNPID= lambda : pd.read_csv('/home/arya/storage/Data/Dmelanogaster/dm5.vcf',
 
 
 def smooth(a,winsize): return scan3way(a/a.sum(),winsize,np.mean)
-def scan3way(a,winsize,f):
+def threeWay(a,winsize,f):
     return pd.concat([a.rolling(window=winsize).apply(f),
                       a.rolling(window=winsize,center=True).apply(f),
                       a.iloc[::-1].rolling(window=winsize).apply(f).iloc[::-1]],
-                     axis=1).apply(lambda x: np.mean(x),axis=1)
+                     axis=1)
+
+def scan3way(a,winsize,f):
+    return threeWay(a,winsize,f).apply(lambda x: np.mean(x),axis=1)
+
+
+def scan2wayLeft(a,winsize,f):
+    """Moving average with left ellements and centered"""
+    X=threeWay(a, winsize, f)
+    x=X[[0,1]].mean(1)
+    x[x.isnull]=x[2]
+    return x
+
+def scan2wayRight(a,winsize,f):
+    """Moving average with left ellements and centered"""
+    return threeWay(a, winsize, f).iloc[:,1:].apply(lambda x: np.mean(x), axis=1)
+
 
 
 def localOutliers(a, q=0.99,winSize = 2e6):
@@ -864,10 +952,28 @@ def getRegionPrameter(CHROM,start,end):
     elif start is not None and end is None :CHROM='{}:{}-'.format(CHROM,start)
     return CHROM
 
+def loadhg19ChromLen(CHROM):
+    return pd.read_csv(home+'storage/Data/Human/ref/hg19.chrom.sizes', sep='\t', header=None).applymap(lambda x: INT(str(x).replace('chr', ''))).set_index(0)[1].loc[CHROM]
 
 class VCF:
     @staticmethod
-    def getN(panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel'):
+    def ID(p,panel=home + 'POP/HA/panel',color=None,name=None,maxn=1e6):
+
+        a = VCF.loadPanel(panel)
+        try:
+            x = a.set_index('pop').loc[p]
+        except:
+            x = a.set_index('super_pop').loc[p]
+        x= x['sample'].tolist()
+        x=pd.Series(x,index=[(name,p)[name is None]] *len(x))
+        if color is not None:
+            x=x.rename('ID').reset_index().rename(columns={'index':'pop'})
+            x['color']=color
+        maxn = min(x.shape[0],int(maxn))
+        return x.iloc[:maxn]
+
+
+    def getN(panel=home+'/storage/Data/Human/1000GP/info/panel'):
         pan=VCF.loadPanel(panel)
         return pd.concat([pan.groupby('pop').size(),pan.groupby('super_pop').size(),pd.Series({'ALL':pan.shape[0]})])
     @staticmethod
@@ -885,8 +991,15 @@ class VCF:
         return map(INT,VCF.header(fname)[9:])
 
     @staticmethod
-    def loadPanel(fname='/home/arya/storage/Data/Human/Kyrgyz/KGZU+ALL/ALL.panel'):
+    def loadPanel(fname=home+'/storage/Data/Human/1000GP/info/panel'):
         return  pd.read_table(fname,sep='\t').dropna(axis=1)
+
+    @staticmethod
+    def loadPanels():
+        panels = pd.Series({'KGZ': '/home/arya/storage/Data/Human/Kyrgyz/info/kyrgyz.panel',
+                           'ALL': '/home/arya/storage/Data/Human/1000GP/info/panel'})
+        load = lambda x: VCF.loadPanel(x).set_index('sample')[['super_pop', 'pop']]
+        return pd.concat(map(load, panels.tolist()))
 
     @staticmethod
     def getDataframeColumns(fin,panel=None,haploid=False):
@@ -899,13 +1012,17 @@ class VCF:
             if isinstance(panel,str): panel=[panel]
             else: panel=panel.tolist()
             panel= pd.concat(map(load,panel))
-            for x in VCF.headerSamples(fin):
-                if haploid:
-                    cols+=[f(x)+( x,'A')]
-                else:
-                    cols+=[f(x)+( x,'A'),f(x)+(x,'B')]
-
-            cols=pd.MultiIndex.from_tuples(cols,names=['SPOP', 'POP', 'ID','HAP'])
+            try:
+                ids=VCF.headerSamples(fin)
+                for x in ids:
+                    if haploid:
+                        cols += [f(x) + (x, 'A')]
+                    else:
+                        cols += [f(x) + (x, 'A'), f(x) + (x, 'B')]
+                cols = pd.MultiIndex.from_tuples(cols, names=['SPOP', 'POP', 'ID', 'HAP'])
+            except:
+                panel['HAP']='A'
+                cols= panel.reset_index().rename(columns={'super_pop':'SPOP','pop':'POP','sample':'ID'}).set_index(['SPOP', 'POP', 'ID', 'HAP']).index
         else:
             for x in VCF.headerSamples(fin):
                 cols+=[( x,'A'),(x,'B')]
@@ -916,39 +1033,44 @@ class VCF:
     def getDataframe(CHROM,start=None,end=None,
                      fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
                      bcftools="/home/arya/bin/bcftools/bcftools",
-                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',haploid=False,dropDots=True):
+                     panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',haploid=False,dropDots=True,
+                     gtfile=False
+                     ):
         reg=getRegionPrameter(CHROM,start,end)
         fin=fin.format(CHROM)
-        cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | tr '|' '\\t'|  tr '/' '\\t' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
-        #cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
-        csv=Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].split('\n')
-        df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5))#.astype(int)
+        if gtfile:
+            df= gz.Freq(f=fin, istr=reg, index=False).set_index(range(5))
+        else:
+            cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | tr '|' '\\t'|  tr '/' '\\t' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
+            #cmd="{} filter {} -i \"N_ALT=1 & TYPE='snp'\" -r {} | {} annotate -x INFO,FORMAT,FILTER,QUAL,FORMAT | grep -v '#' | cut -f1-5,10-".format(bcftools,fin,reg,bcftools)
+            csv=Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].split('\n')
+            df = pd.DataFrame(map(lambda x: x.split('\t'),csv)).dropna().set_index(range(5))#.astype(int)
+
         df.index.names=['CHROM','POS', 'ID', 'REF', 'ALT']
         df.columns=VCF.getDataframeColumns(fin,panel,haploid)
         dropDots=False
-        if dropDots:
-            df[df=='.']=None;
-        else:
-            df=df.replace({'.':0})
+        # if dropDots:df[df=='.']=None;
+        # else:df=df.replace({'.':0})
+
         if haploid:df=df.replace({'0/0':'0','1/1':'1','0/1':'1'})
-        try:
-            df=df.astype(int)
-        except:
-            df=df.astype(float)
+        try:df=df.astype(int)
+        except:df=df.astype(float)
         return df
 
     @staticmethod
     def computeFreqs(CHROM,start=None,end=None,
                      fin=dataPath1000GP+'ALL.chr{}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz',
                      panel=dataPath1000GP+'integrated_call_samples_v3.20130502.ALL.panel',
-                     verbose=0,hap=False,genotype=False,haploid=False):
+                     verbose=0,hap=False,genotype=False,haploid=False,gtfile=False):
         try:
             if verbose:
                 import sys
                 print 'chr{}:{:.1f}-{:.1f}'.format(CHROM,start/1e6,end/1e6); sys.stdout.flush()
-            a=VCF.getDataframe(CHROM,int(start),int(end),fin=fin,panel=panel,haploid=haploid)
+            a=VCF.getDataframe(CHROM,int(start),int(end),fin=fin,panel=panel,haploid=haploid,gtfile=gtfile)
             if panel is None:
                 return a
+            if isinstance(panel,str):
+                panel=pd.Series({'HA':panel})
             if panel.size==1:
                 a=pd.concat([a],1,keys=panel.index)
             else:
@@ -956,16 +1078,20 @@ class VCF:
                 a['DS']='ALL';a.loc[['Sick','Healthy'],'DS']='KGZ'
                 a=a.set_index('DS',append=True).reorder_levels([4,0,1,2,3]).sort_index().T
             if hap: return a
-            elif genotype: return a.groupby(level=[0,1,2,3],axis=1).sum()
-            else:
+            elif genotype:
+                print 'aaaa'
+                return a.groupby(level=[0,1,2,3],axis=1).sum()
+            else:   #compute AF
                 if panel is not None:
-                    return pd.concat([a.groupby(level=0,axis=1).mean(),a.groupby(level=1,axis=1).mean(),a.groupby(level=2,axis=1).mean()],1)
+                    return pd.concat([a.groupby(level=0,axis=1).mean(),a.groupby(level=1,axis=1).mean(),a.groupby(level=[1,2],axis=1).mean()],1)
                 else:
                     return a.mean(1).rename('ALL')
+
         except :
+            print None
             return None
     @staticmethod
-    def computeFreqsChromosome(CHROM,fin,panel,verbose=0,winSize=500000,haplotype=False,genotype=False,save=False,haploid=False,nProc=1):
+    def computeFreqsChromosome(CHROM,fin,panel,verbose=0,winSize=500000,haplotype=False,genotype=False,save=False,haploid=False,nProc=1,gtfile=False):
         print """
         :param CHROM: {}
         :param fin:  {}
@@ -992,7 +1118,7 @@ class VCF:
                 L= int(Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0].strip())
         print 'Converting Chrom {}. ({}, {} Mbp Long)'.format(CHROM,L,int(L/1e6))
         #a=[VCF.computeFreqs(CHROM,start,end=start+winSize-1,fin=fin,panel=panel,hap=haplotype,genotype=genotype,haploid=haploid,verbose=verbose) for start in xrange(0,ceilto(L,winSize),winSize)]
-        args=map(lambda start: (CHROM,start,fin,panel,haplotype,genotype,haploid,verbose,winSize), range(0,ceilto(L,winSize),winSize))
+        args=map(lambda start: (CHROM,start,fin,panel,haplotype,genotype,haploid,verbose,winSize,gtfile), range(0,ceilto(L,winSize),winSize))
         from multiprocessing import Pool
         a=Pool(nProc).map(computeFreqsHelper,args)
         a = intIndex(uniqIndex(pd.concat([x  for x in a if x is not None]),subset=['CHROM','POS']))
@@ -1002,6 +1128,7 @@ class VCF:
             else: suff=''
             a.to_pickle(fin.format(CHROM).replace('.vcf.gz','{}.df'.format(suff)))
         return  a
+
 
     @staticmethod
     def createGeneticMap(VCFin, chrom,gmpath=dataPath+'Human/map/GRCh37/plink.chr{}.GRCh37.map',recompute=False):
@@ -1055,7 +1182,7 @@ class VCF:
         return a
 
 def polymorphixDF(a):
-    return a[polymorphix(a.mean(1),1e-15,True)]
+    return a[polymorphix(a.abs().mean(1),1e-15,True)]
 def polymorphix(x, MAF=1e-9,index=False):
     I=(x>=MAF)&(x<=1-MAF)
     if index: return I
@@ -1125,6 +1252,178 @@ def loadFst(fname):
     a=a.loc[range(1,23)]
     return a[a>0]
 def computeFreqsHelper(args):
-    CHROM,start,fin,panel,hap,genotype,haploid,verbose,winSize=args
+    CHROM,start,fin,panel,hap,genotype,haploid,verbose,winSize,gtfile=args
     end=start+winSize-1
-    return VCF.computeFreqs(CHROM=CHROM,start=start,end=end,fin=fin,panel=panel,verbose=verbose,hap=hap,genotype=genotype,haploid=haploid)
+    return VCF.computeFreqs(CHROM=CHROM,start=start,end=end,fin=fin,panel=panel,verbose=verbose,hap=hap,genotype=genotype,haploid=haploid,gtfile=gtfile)
+
+def lite1d(a,q=0.9,cutoff=None):
+    return a[a>a.quantile(q)]
+class gz:
+    @staticmethod
+    def load(i=None,f='/home/arya/POP/KGZU+ALL/chr{}.aa.gz',istr=None,index=True):
+        from StringIO import StringIO
+        if i is not None:
+            f=f.format(i.CHROM)
+            istr='{}:{}-{}'.format(i.CHROM,i.start,i.end)
+        try:
+            cmd='/home/arya/bin/tabix {} {}'.format(f,istr)
+            ff=StringIO(Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0])
+            a=pd.read_csv(ff,sep='\t',header=None)
+        except:
+            print 'No SNPs in '+istr
+            return None
+        if index:
+            a=a.set_index([0,1])
+            a.index.names = ['CHROM', 'POS']
+        if a.shape[1]==1: a=a.iloc[:,0]
+        return a
+    @staticmethod
+    def Freq(i=None,f='/home/arya/POP/KGZU+ALL/chr{}.aa.gz',istr=None,index=True):
+        """
+        Loads freq from .gz which is GT file and there should be an n file associatged with it for header
+        :param i:
+        :param f:
+        :return:
+        """
+        a=gz.load(i, f, istr, index)
+        try:
+            n = pd.read_pickle(f.format(i.CHROM).replace('.gz', '.n.df'))
+            a.columns=n.index
+            return a/n
+        except:
+            return a
+    @staticmethod
+    def GT(vcf,coding='linear'):
+        """
+        :param vcf: path to vcf file
+        :param coding: can be
+                linear: GT={0,1,2}
+                dominant: GT={0,1}
+                recessive: GT={0,1}
+                het: GT={0,1}
+        :return:
+        """
+        from subprocess import Popen, PIPE, call
+        sh='/home/arya/workspace/bio/Scripts/Bash/VCF/createGTSTDOUT.sh'
+        sh2='/home/arya/workspace/bio/Scripts/Bash/VCF/sampleNames.sh'
+        from StringIO import  StringIO
+        with open(os.devnull, 'w') as FNULL:
+            a= pd.read_csv(StringIO(Popen([sh, vcf], stdout=PIPE, stdin=FNULL, stderr=FNULL).communicate()[0]), sep='\t', header=None).set_index([0, 1])
+            try:
+                cols = pd.read_csv(StringIO(Popen([sh2, vcf], stdout=PIPE, stdin=FNULL, stderr=FNULL).communicate()[0]), sep='\t',header=None)[0].tolist()
+                a.columns = cols
+            except:
+                pass
+        a.index.names=['CHROM','POS']
+        if coding=='linear':
+            pass
+        elif coding=='dominant':
+            a[a>0]=1
+        elif coding == 'resessive':
+            a[a <= 1] = 0
+            a[a > 1] = 1
+        elif coding == 'het':
+            a[a > 1] = 0
+        return a
+
+    @staticmethod
+    def save(df,f):
+        import uuid
+        tmp=home+'storage/tmp/'+str(uuid.uuid4())
+        df.to_csv(tmp,sep='\t',header=None)
+        pd.Series(df.columns).to_csv(f+'.cols',sep='\t',index=False)
+        os.system('bgzip -c {0} > {1} && tabix -p vcf {1} && rm -f {0}'.format(tmp,f))
+
+def MultiIndex(df):
+    return pd.MultiIndex.from_tuples(df.apply(lambda x: tuple(x),1).tolist(),names=df.columns)
+
+def tmpFileName(x=None):
+    if x is None:
+        import uuid
+        tmpPath = home + 'storage/tmp'
+        os.system('mkdir -p ' + tmpPath)
+        return '/home/arya/storage/tmp/' + str(uuid.uuid4())
+    else:
+        os.system('rm -f {}*'.format(x))
+
+def IBS(i,path='/home/arya/POP/HA/', onlyRefPopSNPs=False):
+    bcf = '/home/arya/bin/bcftools/bcftools'
+    plink = '/home/arya/bin/plink'
+    uid = tmpFileName()
+    VCF = path + 'chr{}.vcf.gz'.format(i.CHROM)
+    vcf = uid + '.vcf.gz'
+    ibs = uid
+    if onlyRefPopSNPs:
+        freqs = gz.Freq(i)
+        if freqs is not None:
+            pos = uid + '.vcf'
+            polymorphix(freqs.KGZ).reset_index().iloc[:, :2].to_csv(pos, sep='\t', header=None, index=False)
+            os.system('{} view -R {} {} | {} -T {} -Oz -o {}'.format(bcf, BED.str(i), VCF, bcf, pos, vcf))
+    else:
+        os.system('{} view -r {} {} -Oz -o {}'.format(bcf, BED.str(i), VCF, vcf))
+    from subprocess import Popen, PIPE, STDOUT, call
+    cmd = '{} --vcf {} --cluster --matrix --out {}'.format(plink, vcf, ibs)
+    print cmd
+    with open(os.devnull, 'w') as FNULL:
+        call(cmd.split(), stdout=FNULL, stderr=FNULL)
+    names = pd.read_csv(ibs + '.mibs.id', sep='\t', header=None)[0].values
+    c = pd.read_csv(ibs + '.mibs', sep=' ', header=None).T.dropna().T
+    c.index = names;
+    c.columns = names
+    tmpFileName(uid)
+    return augmentIndex(c,path=path)
+
+
+def augmentIndex(c,axes=[0,1],path='/home/arya/POP/HA/'):
+    pop = VCF.loadPanel(path+'panel').iloc[:, :-1].set_index('sample')
+    one=lambda i: MultiIndex(pop.loc[i].reset_index().rename(columns={'index': 'sample','super_pop':'sup'})[['sup','pop','sample']])
+    if 0 in axes:c.index= one(map(str,c.index))
+    if 1 in axes:c.columns = one(c.columns)
+    return c.sort_index(axis=0).sort_index(axis=1)
+
+def slice(A,pops=None,axes=[0,1],maxn = int(1e6),I=None):
+    sort = lambda x: x.sort_index(0).sort_index(1)
+    m=sort(A)
+    f=lambda x: x.reset_index([0, 1], drop=True)
+    if I is not None:
+        if axes == [0]:
+            return f(m).loc[I.astype(str)]
+        return f(f(m).loc[I.astype(str)].T).T[I.astype(str)]
+    I = []
+    for p in pops:I += VCF.ID(p,maxn=maxn).astype(str).tolist()
+    if axes==[0]:
+        return sort(m.loc[pd.IndexSlice[:, :, I], :])
+    return sort(m.loc[pd.IndexSlice[:, :, I], pd.IndexSlice[:, :, I]])
+
+def rankLogQ(a,positiveTail=True):
+    return (a.dropna().rank(ascending=not positiveTail)/a.dropna().size).apply(np.log10).abs()
+def significantLog(a,q=0.05):
+    return a[a>abs(np.log10(q))]
+def nxScan(a,w=50,name=None,minn=0):
+    if name is None:
+        if a.name is not None:name=a.name
+        else:name='stat'
+    x=scanGenome(a, f={name: np.mean, 'n': len},winSize=w*1000)
+    return x[x.n > minn]
+
+def ihsScan(a,positiveTail=True,minn=0):
+    return nxScan(significantLog(rankLogQ(a,positiveTail=positiveTail)),minn=minn)
+import scipy as sc
+def MW(yp,yn):
+    return -np.log10(sc.stats.mannwhitneyu(yp, yn, use_continuity=True)[1]).round(2)
+def UCSC(i):
+    return 'https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&lastVirtModeType=default&lastVirtModeExtraState=&virtModeType=default&virtMode=0&nonVirtPosition=&position=chr11%3A14125000-14225000&hgsid=604049611_XYcrNVjMubaqAEYhMU3mOa75y1nA'
+
+def saveSingletons(CHROM,f='/home/arya/POP/HA/GT/chr{}.df'):
+    f=f.format(CHROM)
+    a=pd.read_pickle(f)
+
+    super=lambda X: X.loc[:,map(lambda x: not isinstance(x,tuple), X.columns)]
+    a=super(a.iloc[:,1:])
+
+    b=a>0
+    a[b.sum(1)==1].reset_index()[['CHROM','POS']].to_csv(f.replace('.df','.singletonPos.vcf'),sep='\t',index=False,header=False)
+
+def triPopColor(pops):
+    try:return {pops[0]: 'b', pops[1]: 'r', pops[2]: 'g'}
+    except: return {pops[0]: 'b', pops[1]: 'r'}
