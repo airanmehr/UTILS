@@ -4,7 +4,7 @@ Copyleft Dec 17, 2015 Arya Iranmehr, PhD Student, Bafna Lab, UC San Diego,  Emai
 import numba
 import pandas as pd;
 import numpy as np;
-
+from StringIO import StringIO
 
 
 np.set_printoptions(linewidth=140, precision=5, suppress=True)
@@ -78,16 +78,20 @@ class pval:
     @staticmethod
     def gammachi2Test(x,df):return -st.chi2.logsf(x,df), -st.gamma.logsf(x,df/2.,scale=2.),-st.gamma.logsf(x/df,df/2.,scale=2./df)
     @staticmethod
-    def fisher(a):
+    def fisher(A):
         import rpy2.robjects as robjects
-        return robjects.r(
-            'fisher.test(rbind(c({},{}),c({},{})), alternative="less")$p.value'.format(a[0, 0], a[0, 1], a[1, 0], a[1, 1]))[
-            0]
+        if isinstance(A,pd.DataFrame):a=A.values
+        else:a=A
+        if a.shape[0]==2:
+            r='fisher.test(rbind(c({},{}),c({},{})), alternative="less")$p.value'
+            return robjects.r(r.format(a[0, 0], a[0, 1], a[1, 0], a[1, 1]))[0]
+        elif a.shape[0]==3:
+            r='fisher.test(rbind(c({},{}),c({},{}),c({},{})), alternative="less")$p.value'
+            return robjects.r(r.format(a[0, 0], a[0, 1], a[1, 0], a[1, 1], a[2, 0], a[2, 1]))[0]
     @staticmethod
-    def fisher3by2(a):
-        import rpy2.robjects as robjects
-        return robjects.r('fisher.test(rbind(c({},{}),c({},{}),c({},{})), alternative="less")$p.value'.format(
-                    a[0, 0], a[0, 1], a[1, 0], a[1, 1], a[2, 0], a[2, 1]))[0]
+    def chi2Contingency(a):
+        return sc.stats.chi2_contingency(a, correction=False)[1]
+
     @staticmethod
     def empirical(A,Z,positiveStatistic=True):#Z is null scores
         if positiveStatistic:
@@ -400,6 +404,7 @@ class BED:
             return bed
     @staticmethod
     def getIntervals(regions, padding=0,agg='max',ann=None):
+        regions=regions.sort_index() #important
         def get_interval(df, padding, merge=False):
             df = df.sort_index()
             df = pd.DataFrame([df.values, df.index.get_level_values('POS').values - padding,
@@ -433,7 +438,8 @@ class BED:
             DF=ann.loc[regions.index]
             if 'genes' in DF.columns:
                 x=df.reset_index().i.apply(lambda x: pd.Series(str(x).split(';')).astype(int)).stack().astype(int).reset_index(level=1,drop=True)
-                y=x.groupby(level=0).apply(lambda x: pd.DataFrame(DF.reset_index().loc[list(x)].genes.dropna().tolist()).stack().unique()).rename('genes')
+                y=x.groupby(level=0).apply(lambda xx: pd.DataFrame(DF.loc[regions.sort_index().iloc[xx].index].genes.dropna().tolist()).stack().unique()).rename('genes')
+
                 df=df.reset_index().join(y)
         return df
 
@@ -638,7 +644,9 @@ def createAnnotation(vcf ,db='BDGP5.75',computeSNPEFF=True,ud=0,snpeff_args=''):
         df=pd.read_csv(csv,sep='\t',usecols=uscols).set_index(['CHROM','POS']).apply(lambda x: x.astype('category'))
         df.to_pickle(csv.replace('.csv','.df'))
         try:
-            df[['Annotation', 'Annotation_Impact', 'Gene_Name', 'Feature_Type']].to_pickle(csv.replace('.csv','.sdf'))
+            df=df[['Annotation', 'Annotation_Impact', 'Gene_Name', 'Feature_Type']]
+            df.to_pickle(csv.replace('.csv','.sdf'))
+            gz.save(df, csv.replace('.csv', '.s.gz'))
         except:
             pass
         #df.join(snps,rsuffix='_flybaseVCF').to_pickle(csv.replace('.csv','.df'))
@@ -739,7 +747,7 @@ def GOEA(bg,study,assoc,alpha=0.05,propagate=False):
     """
     from goatools.go_enrichment import GOEnrichmentStudy
     from goatools.obo_parser import GODag
-    obodag = GODag(dataPath+"go-basic.obo")
+    obodag = GODag(dataPath+"GO/go-basic.obo")
     goea= GOEnrichmentStudy(bg,assoc.to_dict(),obodag,propagate_counts = propagate,alpha = alpha, methods = ['fdr_bh'])
     goea_results_all = goea.run_study(study)
     goea_results_sig = [r for r in goea_results_all if r.p_fdr_bh < alpha]
@@ -753,21 +761,26 @@ def GOEA(bg,study,assoc,alpha=0.05,propagate=False):
 def loadAssociations(species='fly'):
     taxid={'fly':7227, 'human':9606,'mouse':10090,'rat':10116}
     from goatools.associations import read_ncbi_gene2go
-    aa=pd.Series(read_ncbi_gene2go(dataPath+"gene2go", taxids=[taxid[species]]))
+    aa=pd.Series(read_ncbi_gene2go(dataPath+"GO/gene2go", taxids=[taxid[species]]))
     if species == 'fly':
         bb=pd.read_pickle(dataPath+'fruitfly.mygene.df')
         bb.index=map(int,bb.index)
         aa=bb.join(aa.rename('GO')).set_index("FLYBASE")['GO']
     return aa
 
-def getGeneName(geneIDs,species='fruitfly'):
+def getGeneName(geneIDs=None,species='human'):
     try:
-        return pd.read_pickle(dataPath+'{}.mygene.df'.format(species))
+        return pd.read_pickle(dataPath+'GO/{}.mygene.symbol.df'.format(species))
     except:
         import mygene
         names=mygene.MyGeneInfo().querymany(geneIDs, scopes="entrezgene,flybase",  species=species, as_dataframe=True,fields='all')
-        names.to_pickle(dataPath+'{}.mygene.df'.format(species))
+        names.to_pickle(dataPath+'GO/{}.mygene.df'.format(species))
         return names
+
+def GOtablPrint(a):
+    return a.join(a.study_items.apply(lambda x: ', '.join(getGeneName().loc[x.split(', ')].tolist())).rename('genes')).drop(
+        ['enrichment', '# GO', 'ratio_in_study', 'p_uncorrected', 'ratio_in_pop', 'study_items'], axis=1).sort_values(
+        ['NS', 'p_fdr_bh']).set_index('NS').rename(columns={'study_count': 'count'})
 
 class Dmel:
     @staticmethod
@@ -957,22 +970,34 @@ def loadhg19ChromLen(CHROM):
 
 class VCF:
     @staticmethod
-    def ID(p,panel=home + 'POP/HA/panel',color=None,name=None,maxn=1e6):
+    def AllPops():
+        p = home + 'Kyrgyz/info/kyrgyz.panel'
+        return list(set(VCF.pops(p) + VCF.pops() + VCF.superPops(p) + VCF.superPops()))
 
+    @staticmethod
+    def ID(p,panel=home + 'POP/HAT/panel',color=None,name=None,maxn=1e6):
         a = VCF.loadPanel(panel)
+        try:a=pd.concat([a, VCF.loadPanel(home + 'Kyrgyz/info/kyrgyz.panel')])
+        except: pass
         try:
             x = a.set_index('pop').loc[p]
         except:
             x = a.set_index('super_pop').loc[p]
-        x= x['sample'].tolist()
+        x= list(set(x['sample'].tolist()))
         x=pd.Series(x,index=[(name,p)[name is None]] *len(x))
         if color is not None:
             x=x.rename('ID').reset_index().rename(columns={'index':'pop'})
             x['color']=color
         maxn = min(x.shape[0],int(maxn))
-        return x.iloc[:maxn]
+        return x.iloc[:maxn].astype(str)
+    @staticmethod
+    def pops(panel=home + 'POP/HAT/panel'):
+        return list(VCF.loadPanel(panel)['pop'].unique())
+    @staticmethod
+    def superPops(panel=home + 'POP/HAT/panel'):
+        return list(VCF.loadPanel(panel)['super_pop'].unique())
 
-
+    @staticmethod
     def getN(panel=home+'/storage/Data/Human/1000GP/info/panel'):
         pan=VCF.loadPanel(panel)
         return pd.concat([pan.groupby('pop').size(),pan.groupby('super_pop').size(),pd.Series({'ALL':pan.shape[0]})])
@@ -991,7 +1016,7 @@ class VCF:
         return map(INT,VCF.header(fname)[9:])
 
     @staticmethod
-    def loadPanel(fname=home+'/storage/Data/Human/1000GP/info/panel'):
+    def loadPanel(fname=home + 'POP/HAT/panel'):
         return  pd.read_table(fname,sep='\t').dropna(axis=1)
 
     @staticmethod
@@ -1090,6 +1115,20 @@ class VCF:
         except :
             print None
             return None
+
+    @staticmethod
+    def len(CHROM,ref=19):
+        if ref==19:
+            a=pd.read_csv(home+'storage/Data/Human/ref/hg19.chrom.sizes',sep='\t',header=None).set_index(0)[1]
+            return a.loc['chr'+str(CHROM)]
+    @staticmethod
+    def batch(CHROM,winSize=1e6,ref=19):
+        winSize=int(winSize)
+        L=VCF.len(CHROM,ref)
+        a=pd.DataFrame(range(0, ceilto(L, winSize), winSize),columns=['start'])
+        a['end']=a.start+winSize-1
+        a['CHROM']=CHROM
+        return a
     @staticmethod
     def computeFreqsChromosome(CHROM,fin,panel,verbose=0,winSize=500000,haplotype=False,genotype=False,save=False,haploid=False,nProc=1,gtfile=False):
         print """
@@ -1258,25 +1297,127 @@ def computeFreqsHelper(args):
 
 def lite1d(a,q=0.9,cutoff=None):
     return a[a>a.quantile(q)]
+
+def execute(cmd):
+    with open(os.devnull, 'w') as FNULL:
+        return pd.read_csv(StringIO(Popen([cmd], stdout=PIPE, stdin=FNULL, stderr=FNULL,shell=True) .communicate()[0]), sep='\t',header=None)
+def gzLoadHelper(args):
+    f,p,x=args
+    return gz.FreqPopChrom(f=f, p=p, x=x)
+
 class gz:
     @staticmethod
-    def load(i=None,f='/home/arya/POP/KGZU+ALL/chr{}.aa.gz',istr=None,index=True):
-        from StringIO import StringIO
+    def load(i=None,f='/home/arya/POP/HA/GT/chr{}.vcf.gz',istr=None,index=True,dropIDREFALT=True,indvs=None,pop=None,AA=False,CHROMS=None):
+        if CHROMS is not None:return pd.concat(map(lambda x: gz.load(f.format(x)),CHROMS)).sort_index()
         if i is not None:
-            f=f.format(i.CHROM)
+            try:f=f.format(i.CHROM)
+            except:pass
             istr='{}:{}-{}'.format(i.CHROM,i.start,i.end)
+        if AA: f+='.aa.gz'
+        if pop is not None:indvs=VCF.ID(pop)
+
         try:
-            cmd='/home/arya/bin/tabix {} {}'.format(f,istr)
-            ff=StringIO(Popen([cmd], stdout=PIPE, stdin=PIPE, stderr=STDOUT,shell=True).communicate()[0])
-            a=pd.read_csv(ff,sep='\t',header=None)
+            cols = pd.read_csv(f + '.col', header=None)[0]
+            if indvs is not None:
+                if isinstance(indvs,pd.Series):indvs=indvs.tolist()
+                try:
+                    colsi= (cols.reset_index().set_index(0).iloc[:, 0].loc[['CHROM','POS','ID','REF','ALT']+indvs]).astype(int).tolist()
+                except:
+                    colsi = (cols.reset_index().set_index(0).iloc[:, 0].loc[['CHROM', 'POS'] + indvs]).astype(int).tolist()
+                cols=cols.iloc[colsi]
+            else:cols=cols.tolist()
+        except:
+            pass
+        try:
+            if istr is not None:   cmd='/home/arya/bin/tabix {} {}'.format(f,istr)
+            else:               cmd='zcat {} '.format(f)
+            if indvs is not None:cmd += ' | cut -f' + ','.join(map(lambda x: str(x+1),colsi))
+            a=execute(cmd)
         except:
             print 'No SNPs in '+istr
             return None
+        try:
+            try:
+                a.columns=cols.sort_index().tolist() ### this is very important, cut,sortys by index
+            except:
+                a.columns = ['ID','REF','ALT'] + cols.sort_index().tolist()
+            if dropIDREFALT:
+                if 'ID' in a.columns:
+                    a=a.drop(['ID','REF','ALT'],axis=1)
+        except:
+            pass
         if index:
-            a=a.set_index([0,1])
-            a.index.names = ['CHROM', 'POS']
-        if a.shape[1]==1: a=a.iloc[:,0]
+            if a.shape[1]==3:
+                name=0
+                if 'CHROM' in a.columns:
+                    a=a.set_index(['CHROM', 'POS']).iloc[:,0]
+                else:
+                    a = a.set_index([0, 1]).iloc[:, 0].rename(name)
+                    a.index.names = ['CHROM', 'POS']
+            else:
+                if 'ID' in a.columns:a = a.set_index(['CHROM', 'POS','ID','REF','ALT'])
+                else:a=a.set_index(['CHROM','POS'])
         return a
+
+    @staticmethod
+    def FreqPopChromOld(CHROM,pop, f='/home/arya/POP/HA/GT/chr{}.vcf.gz',batchSize=1e6):
+        I=[i for _,i in VCF.batch(CHROM, batchSize).iterrows()]
+        I=map(lambda i : gz.FreqPop(i,f,pop),I)
+        return pd.concat([x for x in I if x is not None])
+
+    @staticmethod
+    def FreqPopGenomeOLD( pop, f='/home/arya/POP/HA/GT/chr{}.vcf.gz',autosomal=True):
+        if autosomal: CHROMS=range(1,23)
+        return pd.concat(map(lambda c: gz.FreqPopChrom(c,pop)),pop)
+
+    @staticmethod
+    def FreqPopChrom(p,x,f = '/home/arya/POP/HAT/GT/AF.gz'):
+        try:
+            a = polymorphixDF(pd.DataFrame(gz.load(f=f, indvs=p, istr=x)))
+        except:
+            a = polymorphixDF(pd.DataFrame(gz.load(f=f.replace('/HAT/', '/{}/'.format(p)), indvs=p, istr=x)))
+        if a.shape[1]==1:a=a.iloc[:,0]
+        return a.dropna()
+    @staticmethod
+    def FreqPopGenome(pop, f='/home/arya/POP/HAT/GT/AF.gz',daf=False,nProc=1):
+        if daf: f=f.replace('/AF.','/DAF.')
+        p=pop
+        if isinstance(pop,str):p=[pop]
+        CHROMS=map(str,range(1,23))
+        if nProc==1:
+            return pd.concat(map(lambda x: gz.FreqPopChrom(f=f, p=p, x=x),CHROMS))
+        else:
+            from multiprocessing import Pool
+            pool=Pool(nProc)
+            args=map( lambda x: (f,p,x), CHROMS)
+            a=pd.concat(pool.map(gzLoadHelper,args))
+            pool.terminate()
+            return a
+
+
+    @staticmethod
+    def FreqPop(i=None, f='/home/arya/POP/HA/GT/chr{}.vcf.gz', istr=None,pop=None,AA=False):
+        """
+        Loads freq from .gz which is GT file and there should be an n file associatged with it for header
+        :param i:
+        :param f:
+        :return:
+        """
+        try:
+            if AA:
+                a = (gz.load(i, f, istr,dropIDREFALT=False,pop=pop).mean(1)/2).rename(pop)
+                a=pd.concat([a.reset_index(['ID','REF','ALT']),gz.load(i, f, istr,AA=True)],1)
+                a = a[(a.AA == a.REF) | (a.AA == a.ALT)]
+                I = a.ALT == a.AA
+                a=a[pop]
+                a[I]=1-a[I]
+            else:
+                a = (gz.load(i, f, istr, pop=pop).mean(1) / 2).rename(pop)
+            return a
+        except:
+            return None
+
+
     @staticmethod
     def Freq(i=None,f='/home/arya/POP/KGZU+ALL/chr{}.aa.gz',istr=None,index=True):
         """
@@ -1292,6 +1433,26 @@ class gz:
             return a/n
         except:
             return a
+    @staticmethod
+    def code(A,coding='linear'):
+        """
+        :param coding: can be
+        linear: GT={0,1,2}
+        dominant: GT={0,1}
+        recessive: GT={0,1}
+        het: GT={0,1}
+        """
+        a=A.copy(True)
+        if coding=='linear':
+            pass
+        elif coding=='dominant':
+            a[a>0]=1
+        elif coding == 'recessive':
+            a[a <= 1] = 0
+            a[a > 1] = 1
+        elif coding == 'het':
+            a[a > 1] = 0
+        return a
     @staticmethod
     def GT(vcf,coding='linear'):
         """
@@ -1315,24 +1476,17 @@ class gz:
             except:
                 pass
         a.index.names=['CHROM','POS']
-        if coding=='linear':
-            pass
-        elif coding=='dominant':
-            a[a>0]=1
-        elif coding == 'resessive':
-            a[a <= 1] = 0
-            a[a > 1] = 1
-        elif coding == 'het':
-            a[a > 1] = 0
-        return a
+
+        return gz.code(a,coding)
 
     @staticmethod
-    def save(df,f):
+    def save(df,f,index=True):
         import uuid
         tmp=home+'storage/tmp/'+str(uuid.uuid4())
         df.to_csv(tmp,sep='\t',header=None)
-        pd.Series(df.columns).to_csv(f+'.cols',sep='\t',index=False)
-        os.system('bgzip -c {0} > {1} && tabix -p vcf {1} && rm -f {0}'.format(tmp,f))
+        if isinstance(df,pd.DataFrame):pd.Series(df.reset_index().columns).to_csv(f+'.col',sep='\t',index=False)
+        os.system('/home/arya/bin/bgzip -c {0} > {1} &&  rm -f {0}'.format(tmp,f))
+        if index:os.system('/home/arya/bin/tabix -p vcf {} '.format(f))
 
 def MultiIndex(df):
     return pd.MultiIndex.from_tuples(df.apply(lambda x: tuple(x),1).tolist(),names=df.columns)
@@ -1363,7 +1517,6 @@ def IBS(i,path='/home/arya/POP/HA/', onlyRefPopSNPs=False):
         os.system('{} view -r {} {} -Oz -o {}'.format(bcf, BED.str(i), VCF, vcf))
     from subprocess import Popen, PIPE, STDOUT, call
     cmd = '{} --vcf {} --cluster --matrix --out {}'.format(plink, vcf, ibs)
-    print cmd
     with open(os.devnull, 'w') as FNULL:
         call(cmd.split(), stdout=FNULL, stderr=FNULL)
     names = pd.read_csv(ibs + '.mibs.id', sep='\t', header=None)[0].values
@@ -1399,15 +1552,20 @@ def rankLogQ(a,positiveTail=True):
     return (a.dropna().rank(ascending=not positiveTail)/a.dropna().size).apply(np.log10).abs()
 def significantLog(a,q=0.05):
     return a[a>abs(np.log10(q))]
-def nxScan(a,w=50,name=None,minn=0):
+def nxScan(a,w=50,name=None,minn=0,f=np.mean):
     if name is None:
         if a.name is not None:name=a.name
         else:name='stat'
-    x=scanGenome(a, f={name: np.mean, 'n': len},winSize=w*1000)
+    x=scanGenome(a, f={name: f, 'n': len},winSize=w*1000)
     return x[x.n > minn]
 
-def ihsScan(a,positiveTail=True,minn=0):
-    return nxScan(significantLog(rankLogQ(a,positiveTail=positiveTail)),minn=minn)
+def ihsScan(a,minn=0,topQuantile=0.05):
+    # print a
+    # if a[a >= a.quantile(0.999)].value_counts().size>1:
+    return nxScan(a[a>=a.quantile(0.999)],f=np.mean, minn=minn)
+    # else:return nxScan(a[a>=a.quantile(0.995)],f=np.mean, minn=minn)
+    return nxScan(significantLog(rankLogQ(a,positiveTail=positiveTail),q=topQuantile),minn=minn)
+
 import scipy as sc
 def MW(yp,yn):
     return -np.log10(sc.stats.mannwhitneyu(yp, yn, use_continuity=True)[1]).round(2)
@@ -1427,3 +1585,87 @@ def saveSingletons(CHROM,f='/home/arya/POP/HA/GT/chr{}.df'):
 def triPopColor(pops):
     try:return {pops[0]: 'b', pops[1]: 'r', pops[2]: 'g'}
     except: return {pops[0]: 'b', pops[1]: 'r'}
+
+def saveBegelePosAsia(chrom):
+    a=pd.read_pickle('/home/arya/POP/KGZU+ALL/chr{}.df'.format(chrom))[['SAS','EAS']].reset_index(['ID','REF','ALT'],drop=True).loc[chrom]
+    b=pd.read_csv('/home/arya/storage/Data/Human/Beagle/hg19/chr{}.pos.vcf'.format(22),sep='\t',header=None)[1]
+    a=a.loc[b]
+    a=a[((a==0).sum(1)<2)&((a==1).sum(1)<2)].reset_index()
+    a['CHROM']=chrom
+    a[['CHROM','POS']].to_csv('/home/arya/POP/ASIA/chr{}.pos.vcf'.format(chrom),sep='\t',header=None,index=False)
+
+
+dedup=lambda x: x[~x.index.duplicated()]
+def quickMergeCHROM(a):
+    """
+    :param a: list of series each of which is a chromosome
+    :return:
+    """
+    a=[x for x in a if x is not None]
+    CHROM=a[0].index[0][0]
+    print CHROM
+    b=pd.concat([pd.concat([dedup(x.loc[CHROM]) for x in a],1)],keys=[CHROM])
+    b.index.names=['CHROM','POS']
+    return b
+
+def quickMergeGenome(a,CHROMS=range(1,23)):
+    a = [x for x in a if x is not None]
+    return pd.concat([quickMergeCHROM([x.loc[[c]] for x in a ]) for c in CHROMS])
+
+def loadPiarPop(f,pop,popxp):
+    try:return gz.load(f=f.format(pop, popxp))
+    except:return gz.load(f=f.format(popxp, pop))
+def pbs(pop,popxp,outgroup,FstPath =  '/home/arya/POP/HAT/Fst/merge/{}.{}.gz',pbsPath='/home/arya/POP/HAT/PBS/',recompute=True):
+    p = pbsPath+'{}.{}.gz'.format(pop, popxp)
+    try:
+        if recompute:exit()
+        print 'Loaading',p,
+        a=gz.load(f=p)
+    except:
+        os.system('mkdir -p '+pbsPath)
+        path=FstPath
+        Pos=lambda x: x[x>0]
+        HS = Pos(loadPiarPop(path,pop, popxp)).rename('HS')
+        HL = Pos(loadPiarPop(path,pop, outgroup)).rename('HL')
+        SL = Pos(loadPiarPop(path,popxp, outgroup)).rename('SL')
+        a = map(lambda x: x.dropna(), [HS, HL, SL])
+        a = quickMergeGenome(a).fillna(0)
+        print 'Merging is done',a.shape
+        a = (1 - a[a <1]).apply(np.log).apply(lambda x: x.fillna(x.min()-1)).abs().round(2)
+        a=(a.HS + a.HL - a.SL)
+        gz.save(a,p)
+    return a
+
+def loadHLIMetrics(path='~/storage/Data/Human/Tibet/HLI'):
+    def picardMetrics():
+        a=execute("find {} | grep _collect_wgs_metrics_output.txt".format(path))[0]
+        i=a.apply(lambda x: os.path.basename(x).split('_')[0]).rename('ID')
+        a=a.apply(lambda x: execute("head -n8 {} | grep -v '#'".format(x)).T.set_index(0)[1])
+        a.index=i
+        return a
+    def freemix():
+        a = execute("find {} | grep selfSM".format(path))[0]
+        a=a.apply(lambda x: execute('cat {}'.format(x)).T.set_index(0)[1]).set_index('#SEQ_ID')
+        a.index.name='ID'
+        return a
+    return pd.concat([picardMetrics(),freemix()],1)
+def getGeneList( x):  return pd.DataFrame(x.tolist()).stack().unique().tolist()
+def removeChr(a):
+    a=a.reset_index()
+    a.CHROM=a.CHROM.apply(lambda x: INT(str(x).replace('chr','')))
+    a=a.set_index(['CHROM','POS'])
+    return a
+
+
+def loadWNG(pop,padding=2000000):
+    def get_interval(a, padding=padding):
+        b = a.reset_index()
+        b['start'] = b.POS - padding
+        b['end'] = b.POS + padding
+        return b
+    a=pd.read_csv(dataPath + 'Human/scan/gene-info.csv').set_index(['pop'])
+    try:a=a.loc[pop]
+    except: a=a[map(lambda x: pop in x,a.index)]
+    return get_interval(removeChr(a[['POS_hg19', 'chrom', 'gene']].rename(
+        columns={'POS_hg19': 'POS', 'chrom': 'CHROM', 'gene': 'name'}).reset_index().applymap(INT).set_index(
+        ['CHROM', 'POS'])))

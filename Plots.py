@@ -167,6 +167,10 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
                 MIN=a.replace({-np.inf:None}).min()
                 ax.fill_between([row.gstart, row.gend], MIN,MAX, color='b', alpha=0.4)
 
+                if 'name' in row.index:
+                    xy=(row.gstart, MAX)
+                    ax.annotate(row['name'], xy=xy, xytext=xy,horizontalalignment='center',fontsize=10,rotation=90,verticalalignment='bottom')
+
         ax.scatter(a.index, a, s=markerSize, c=c, alpha=0.8, edgecolors='none')
 
         outliers=None
