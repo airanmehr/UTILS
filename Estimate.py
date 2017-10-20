@@ -6,7 +6,6 @@ import sys
 
 import numpy as np
 import pandas as pd
-import pylab as plt
 
 try:
     from SFSelect import metaSVM
@@ -18,7 +17,9 @@ except:
 
 class Estimate:
     @staticmethod
-    def pi(snp):
+    def pi(a):
+        snp=a==1
+        if isinstance(snp,pd.DataFrame): snp=snp.values
         n=snp.shape[0]
         return np.mean([sum(np.logical_xor(snp[i,:],snp[j,:])) for i in range(n-1) for j in range(i+1,n)])
 

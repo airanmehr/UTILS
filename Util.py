@@ -22,6 +22,7 @@ parentdir=lambda path:os.path.abspath(os.path.join(path, os.pardir))
 home = os.path.expanduser('~') + '/'
 paperPath = home + 'workspace/timeseries_paper/'
 dataPath=home+'storage/Data/'
+scanPath=dataPath + 'Human/scan/'
 dataPathDmel=dataPath+'Dmelanogaster/'
 dataPath1000GP=dataPath+'Human/20130502/ALL/'
 paperFiguresPath = paperPath + 'figures/'
@@ -49,6 +50,18 @@ def pcaX(a,n=2):
     from sklearn.decomposition import PCA
     return pd.DataFrame(PCA(n_components=n).fit(a).transform(a),index=a.index)
 class pval:
+    @staticmethod
+    def qval(p,concat=False):
+        import rpy2.robjects as ro
+        from rpy2.robjects.packages import importr
+        qvalue = importr("qvalue")
+        pvals = ro.FloatVector(p.values)
+        rcode = 'qobj <-qvalue(p=%s,  lambda=seq(0.05, 0.95, 1))' % (pvals.r_repr())
+        res = ro.r(rcode)
+        q= pd.Series(list(ro.r('qobj$qvalue')), index=p.index)
+        if concat:q=pd.concat([p,q],1,keys=['pval','qval'])
+        return q
+
     #c=utl.scanGenome(a,f=lambda x: utl.chi2SampleMeanPval(x,1))
     @staticmethod
     def zscore(x): return ((x-x.mean())/x.std()).astype(float)
@@ -89,7 +102,9 @@ class pval:
             r='fisher.test(rbind(c({},{}),c({},{}),c({},{})), alternative="less")$p.value'
             return robjects.r(r.format(a[0, 0], a[0, 1], a[1, 0], a[1, 1], a[2, 0], a[2, 1]))[0]
     @staticmethod
-    def chi2Contingency(a):
+    def chi2Contingency(A):
+        if isinstance(A,pd.DataFrame):a=A.values
+        else:a=A
         return sc.stats.chi2_contingency(a, correction=False)[1]
 
     @staticmethod
@@ -271,9 +286,17 @@ def scanChromosome(x,f,uf,winSize,step,minSize):
     Returns:
     """
     # print 'Chromosome',x.name
+    if x.index[-1] - x.index[0] < winSize:
+        f=(f,uf)[uf is not None]
+        i= roundto(((x.index[-1] + x.index[0]) / 2.),10000)+5000
+        z=pd.DataFrame([f(x)], index=[i])
+        z.index.name='POS'
+        return z
+
     POS=x.index.get_level_values('POS')
     res=[]
-    Bins=np.arange(max(0,roundto(POS.min()-winSize,base=step)), roundto(POS.max(),base=step),winSize)
+    # Bins=np.arange(max(0,roundto(POS.min()-winSize,base=step)), roundto(POS.max(),base=step),winSize)
+    Bins = np.arange(0, roundto(POS.max(), base=step), winSize)
     for i in range(int(winSize/step)):
         bins=i*step +Bins
         windows=pd.cut( POS, bins,labels=(bins[:-1] + winSize/2).astype(int))
@@ -375,6 +398,14 @@ def getContingencyTable(AllGenes, putativeList, myList):
 
 class BED:
     @staticmethod
+    def expand(i, pad):
+        x = i.copy(True)
+        x.start = x.start - pad;
+        x.end += pad;
+        x.start = max(0, x.start)
+        return x
+
+    @staticmethod
     def str(i):return '{}:{}-{}'.format(INT(i.CHROM),INT(i.start),INT(i.end))
     @staticmethod
     def drop_duplicates(file_a,file_b,outfile=None):
@@ -404,6 +435,9 @@ class BED:
             return bed
     @staticmethod
     def getIntervals(regions, padding=0,agg='max',ann=None):
+        """WARNING: i columns correspond to the iloc of the input that is soted by CHROM,start,end
+        To Avoid Bugs in downstream analysis sort the input by position so that i field make sense all the time.
+        """
         regions=regions.sort_index() #important
         def get_interval(df, padding, merge=False):
             df = df.sort_index()
@@ -620,6 +654,7 @@ def createAnnotation(vcf ,db='BDGP5.75',computeSNPEFF=True,ud=0,snpeff_args=''):
     #snps=loadSNPID()
     import subprocess
     fname=vcf.replace('.vcf','.SNPEFF.vcf').replace('.gz','')
+    fname=vcf+'.SNPEFF.vcf'
     assert fname!=vcf
     if computeSNPEFF:
         cmd='java -Xmx4g -jar ~/bin/snpEff/snpEff.jar {} -ud {} -s snpeff.html {} {} | cut -f1-8 > {}'.format(snpeff_args,ud,db,vcf,fname)
@@ -709,7 +744,8 @@ def localOutliers(a, q=0.99,winSize = 2e6):
         return xx[xx >= th].loc[xx.name]
     return a.loc[a.groupby(level=0).apply(f).index]
 
-def renameColumns(df,suffix,pre=True):
+def renameColumns(DF,suffix,pre=True):
+    df=DF.copy(True)
     if pre:
         df.columns=map(lambda x:'{}{}'.format(suffix,x),df.columns)
     else:
@@ -975,6 +1011,11 @@ class VCF:
         return list(set(VCF.pops(p) + VCF.pops() + VCF.superPops(p) + VCF.superPops()))
 
     @staticmethod
+    def IDs(P, panel=home + 'POP/HAT/panel', color=None, name=None, maxn=1e6):
+        return pd.concat([VCF.ID(p=p,panel=panel,color=color,name=name,maxn=maxn) for p in P])
+
+
+    @staticmethod
     def ID(p,panel=home + 'POP/HAT/panel',color=None,name=None,maxn=1e6):
         a = VCF.loadPanel(panel)
         try:a=pd.concat([a, VCF.loadPanel(home + 'Kyrgyz/info/kyrgyz.panel')])
@@ -989,7 +1030,10 @@ class VCF:
             x=x.rename('ID').reset_index().rename(columns={'index':'pop'})
             x['color']=color
         maxn = min(x.shape[0],int(maxn))
-        return x.iloc[:maxn].astype(str)
+        x=x.iloc[:maxn].astype(str)
+        x.index.name='pop'
+        return x.rename('ID')
+
     @staticmethod
     def pops(panel=home + 'POP/HAT/panel'):
         return list(VCF.loadPanel(panel)['pop'].unique())
@@ -1220,8 +1264,8 @@ class VCF:
         a.columns.names=['REP','GEN','READ']
         return a
 
-def polymorphixDF(a):
-    return a[polymorphix(a.abs().mean(1),1e-15,True)]
+def polymorphixDF(a,MAF=1e-15):
+    return a[polymorphix(a.abs().mean(1),MAF,True)]
 def polymorphix(x, MAF=1e-9,index=False):
     I=(x>=MAF)&(x<=1-MAF)
     if index: return I
@@ -1298,21 +1342,45 @@ def computeFreqsHelper(args):
 def lite1d(a,q=0.9,cutoff=None):
     return a[a>a.quantile(q)]
 
-def execute(cmd):
+def execute(cmd,returnDF=True):
+    # print cmd
     with open(os.devnull, 'w') as FNULL:
-        return pd.read_csv(StringIO(Popen([cmd], stdout=PIPE, stdin=FNULL, stderr=FNULL,shell=True) .communicate()[0]), sep='\t',header=None)
+        if not returnDF: return Popen([cmd], stdout=PIPE, stdin=FNULL, stderr=FNULL, shell=True).communicate()
+        return pd.read_csv(StringIO(Popen([cmd], stdout=PIPE, stdin=FNULL, stderr=FNULL,shell=True) .communicate()[0]), sep='\t', header=None)
+
+
+        # a=Popen([cmd], stdout=PIPE, stdin=FNULL, stderr=FNULL,shell=True) .communicate()[0]
+    # if returnDF: return pd.read_csv(StringIO(a), sep='\t',header=None)
 def gzLoadHelper(args):
     f,p,x=args
     return gz.FreqPopChrom(f=f, p=p, x=x)
-
+import traceback
 class gz:
     @staticmethod
-    def load(i=None,f='/home/arya/POP/HA/GT/chr{}.vcf.gz',istr=None,index=True,dropIDREFALT=True,indvs=None,pop=None,AA=False,CHROMS=None):
+    def loadAA(f, i, code='linear'):
+        a = gz.load(f, i, dropIDREFALT=False)
+        cols = ['REF', 'ALT', 'ID']
+        aa = a.reset_index(cols)[cols].join(gz.load(f, i, AA=True))
+        a = a.reset_index(cols, drop=True)
+        a = a[(aa.REF == aa.AA) | (aa.ALT == aa.AA)]
+        I = (aa.ALT == aa.AA)
+
+        def fix(a, I, code):
+            if code == 'linear': k = 2
+            if code == 'freq': k = 1
+            a.loc[TI(I)] = k - a.loc[TI(I)]
+            return a
+        return fix(a, I, code)
+    @staticmethod
+    def load(f='/home/arya/POP/HA/GT/chr{}.vcf.gz',i=None,istr=None,index=True,dropIDREFALT=True,indvs=None,pop=None,AA=False,CHROMS=None):
         if CHROMS is not None:return pd.concat(map(lambda x: gz.load(f.format(x)),CHROMS)).sort_index()
         if i is not None:
             try:f=f.format(i.CHROM)
             except:pass
             istr='{}:{}-{}'.format(i.CHROM,i.start,i.end)
+        # if istr is not None:
+        #     xx=istr.split(':')
+            # i=pd.Series({'CHROM': xx[0], 'start':xx[1].split('-')[0], 'end':xx[1].split('-')[1]}).apply(INT)
         if AA: f+='.aa.gz'
         if pop is not None:indvs=VCF.ID(pop)
 
@@ -1323,18 +1391,21 @@ class gz:
                 try:
                     colsi= (cols.reset_index().set_index(0).iloc[:, 0].loc[['CHROM','POS','ID','REF','ALT']+indvs]).astype(int).tolist()
                 except:
-                    colsi = (cols.reset_index().set_index(0).iloc[:, 0].loc[['CHROM', 'POS'] + indvs]).astype(int).tolist()
+                    colsi = (cols.reset_index().set_index(0).iloc[:, 0].loc[['CHROM', 'POS'] + list(indvs)]).astype(int).tolist()
                 cols=cols.iloc[colsi]
-            else:cols=cols.tolist()
+            else:cols=cols
         except:
             pass
+
+
         try:
             if istr is not None:   cmd='/home/arya/bin/tabix {} {}'.format(f,istr)
             else:               cmd='zcat {} '.format(f)
             if indvs is not None:cmd += ' | cut -f' + ','.join(map(lambda x: str(x+1),colsi))
+
             a=execute(cmd)
         except:
-            print 'No SNPs in '+istr
+            # print 'No SNPs in '+istr
             return None
         try:
             try:
@@ -1349,14 +1420,18 @@ class gz:
         if index:
             if a.shape[1]==3:
                 name=0
+                if AA:name='AA'
                 if 'CHROM' in a.columns:
-                    a=a.set_index(['CHROM', 'POS']).iloc[:,0]
+                    a.CHROM=a.CHROM.apply(INT)
+                    a=(a.set_index(['CHROM', 'POS'])).iloc[:,0].rename(name)
                 else:
+                    a[0] = a[0].apply(INT)
                     a = a.set_index([0, 1]).iloc[:, 0].rename(name)
                     a.index.names = ['CHROM', 'POS']
             else:
+                a.CHROM = a.CHROM.apply(INT)
                 if 'ID' in a.columns:a = a.set_index(['CHROM', 'POS','ID','REF','ALT'])
-                else:a=a.set_index(['CHROM','POS'])
+                else:a=(a.set_index(['CHROM','POS']))
         return a
 
     @staticmethod
@@ -1405,28 +1480,28 @@ class gz:
         """
         try:
             if AA:
-                a = (gz.load(i, f, istr,dropIDREFALT=False,pop=pop).mean(1)/2).rename(pop)
-                a=pd.concat([a.reset_index(['ID','REF','ALT']),gz.load(i, f, istr,AA=True)],1)
+                a = (gz.load(i=i, f=f, istr=istr,dropIDREFALT=False,pop=pop).mean(1)/2).rename(pop)
+                a=pd.concat([a.reset_index(['ID','REF','ALT']),gz.load(i=i, f=f, istr=istr,AA=True)],1)
                 a = a[(a.AA == a.REF) | (a.AA == a.ALT)]
                 I = a.ALT == a.AA
                 a=a[pop]
                 a[I]=1-a[I]
             else:
-                a = (gz.load(i, f, istr, pop=pop).mean(1) / 2).rename(pop)
+                a = (gz.load(i=i, f=f, istr=istr, pop=pop).mean(1) / 2).rename(pop)
             return a
         except:
             return None
 
 
     @staticmethod
-    def Freq(i=None,f='/home/arya/POP/KGZU+ALL/chr{}.aa.gz',istr=None,index=True):
+    def Freq(i=None,f='/home/arya/POP/HAT/GT/DAF.gz',istr=None,index=True):
         """
         Loads freq from .gz which is GT file and there should be an n file associatged with it for header
         :param i:
         :param f:
         :return:
         """
-        a=gz.load(i, f, istr, index)
+        a=gz.load(i=i, f=f, istr=istr, index=index)
         try:
             n = pd.read_pickle(f.format(i.CHROM).replace('.gz', '.n.df'))
             a.columns=n.index
@@ -1512,13 +1587,15 @@ def IBS(i,path='/home/arya/POP/HA/', onlyRefPopSNPs=False):
         if freqs is not None:
             pos = uid + '.vcf'
             polymorphix(freqs.KGZ).reset_index().iloc[:, :2].to_csv(pos, sep='\t', header=None, index=False)
-            os.system('{} view -R {} {} | {} -T {} -Oz -o {}'.format(bcf, BED.str(i), VCF, bcf, pos, vcf))
+            execute('{} view -R {} {} | {} -T {} -Oz -o {}'.format(bcf, BED.str(i), VCF, bcf, pos, vcf),False)
     else:
-        os.system('{} view -r {} {} -Oz -o {}'.format(bcf, BED.str(i), VCF, vcf))
+        execute('{} view -r {} {} -Oz -o {}'.format(bcf, BED.str(i), VCF, vcf),False)
     from subprocess import Popen, PIPE, STDOUT, call
     cmd = '{} --vcf {} --cluster --matrix --out {}'.format(plink, vcf, ibs)
-    with open(os.devnull, 'w') as FNULL:
-        call(cmd.split(), stdout=FNULL, stderr=FNULL)
+    execute(cmd,False)
+    # with open(os.devnull, 'w') as FNULL:
+
+    #     call(cmd.split(), stdout=FNULL, stderr=FNULL)
     names = pd.read_csv(ibs + '.mibs.id', sep='\t', header=None)[0].values
     c = pd.read_csv(ibs + '.mibs', sep=' ', header=None).T.dropna().T
     c.index = names;
@@ -1550,19 +1627,29 @@ def slice(A,pops=None,axes=[0,1],maxn = int(1e6),I=None):
 
 def rankLogQ(a,positiveTail=True):
     return (a.dropna().rank(ascending=not positiveTail)/a.dropna().size).apply(np.log10).abs()
+
+def rankPercentile(a,measure=100,n=None):
+    if n is not None:
+        rq=(a.rank() + (n - a.shape[0])) / n
+    else:
+        rq=a.rank() / a.shape[0]
+    return (rq * measure).apply(np.ceil).astype(int)
+
+
 def significantLog(a,q=0.05):
     return a[a>abs(np.log10(q))]
 def nxScan(a,w=50,name=None,minn=0,f=np.mean):
     if name is None:
         if a.name is not None:name=a.name
         else:name='stat'
+    print name
     x=scanGenome(a, f={name: f, 'n': len},winSize=w*1000)
     return x[x.n > minn]
 
 def ihsScan(a,minn=0,topQuantile=0.05):
     # print a
     # if a[a >= a.quantile(0.999)].value_counts().size>1:
-    return nxScan(a[a>=a.quantile(0.999)],f=np.mean, minn=minn)
+    return nxScan(a[a>=a.quantile(0.95)],f=np.mean, minn=minn)
     # else:return nxScan(a[a>=a.quantile(0.995)],f=np.mean, minn=minn)
     return nxScan(significantLog(rankLogQ(a,positiveTail=positiveTail),q=topQuantile),minn=minn)
 
@@ -1596,45 +1683,63 @@ def saveBegelePosAsia(chrom):
 
 
 dedup=lambda x: x[~x.index.duplicated()]
-def quickMergeCHROM(a):
+def quickMergeCHROM(a,verbose=False,keys=None):
     """
     :param a: list of series each of which is a chromosome
     :return:
     """
     a=[x for x in a if x is not None]
+    if not len(a): return None
     CHROM=a[0].index[0][0]
-    print CHROM
-    b=pd.concat([pd.concat([dedup(x.loc[CHROM]) for x in a],1)],keys=[CHROM])
+    if verbose:print CHROM
+    b=pd.concat([pd.concat([dedup(x.loc[CHROM]) for x in a],1,keys=keys)],keys=[CHROM])
     b.index.names=['CHROM','POS']
     return b
 
-def quickMergeGenome(a,CHROMS=range(1,23)):
+def quickMergeGenome(a,CHROMS=range(1,23),keys=None):
+    [x for x in a if x is not None]
+    def xs(x,c):
+        try:return x.loc[[c]]
+        except: pass
+    a =[quickMergeCHROM([xs(x,c) for x in a ],keys=keys) for c in CHROMS]
     a = [x for x in a if x is not None]
-    return pd.concat([quickMergeCHROM([x.loc[[c]] for x in a ]) for c in CHROMS])
+    return pd.concat(a)
 
-def loadPiarPop(f,pop,popxp):
-    try:return gz.load(f=f.format(pop, popxp))
-    except:return gz.load(f=f.format(popxp, pop))
-def pbs(pop,popxp,outgroup,FstPath =  '/home/arya/POP/HAT/Fst/merge/{}.{}.gz',pbsPath='/home/arya/POP/HAT/PBS/',recompute=True):
-    p = pbsPath+'{}.{}.gz'.format(pop, popxp)
-    try:
-        if recompute:exit()
-        print 'Loaading',p,
-        a=gz.load(f=p)
+def safeConcat(a):  return pd.concat([x for x in a if x is not None])
+
+def loadPiarPop(f,pop,popxp,negate=False):
+    load=pd.read_pickle
+    if f[-3:]=='.gz':load=gz.load
+    try:return load(f.format(pop, popxp))
     except:
-        os.system('mkdir -p '+pbsPath)
-        path=FstPath
-        Pos=lambda x: x[x>0]
-        HS = Pos(loadPiarPop(path,pop, popxp)).rename('HS')
-        HL = Pos(loadPiarPop(path,pop, outgroup)).rename('HL')
-        SL = Pos(loadPiarPop(path,popxp, outgroup)).rename('SL')
-        a = map(lambda x: x.dropna(), [HS, HL, SL])
-        a = quickMergeGenome(a).fillna(0)
+        alpha=(1,-1)[negate]
+        return load(f.format(popxp, pop))*alpha
+
+def pbs(pop,popxp,outgroup,hudson=False):
+    n=None
+    try:
+        return loadPiarPop('/home/arya/scan/PBS/{}.{}.PBS'+('','Hudson')[hudson]+'.gz',pop,popxp)
+    except:
+        if hudson:
+            path=scanPath + 'SFS/{}.{}.df'
+            HS = FstHudson(loadPiarPop(path, pop, popxp).xs('pi', 0, 2), pop).rename('HS').dropna()
+            HL =FstHudson(loadPiarPop(path, pop, outgroup).xs('pi', 0, 2), pop).rename('HL').dropna()
+            SL =FstHudson(loadPiarPop(path,  popxp, outgroup).xs('pi', 0, 2), popxp).rename('SL').dropna()
+            n=loadPiarPop(path, pop, popxp).xs('m', 0, 2)[pop].rename('n').astype(int)
+        else:
+            HS = loadPiarPop('/home/arya/scan/Fst/{}.{}.gz',pop,popxp).rename('HS').dropna()
+            HL = loadPiarPop('/home/arya/scan/Fst/{}.{}.gz',pop,outgroup).rename('HL').dropna()
+            SL = loadPiarPop('/home/arya/scan/Fst/{}.{}.gz',popxp,outgroup).rename('SL').dropna()
+        def pos(x):
+            x[x<=0]=0
+            return x
+        a = pos(quickMergeGenome([HS,HL,SL])).fillna(0)
         print 'Merging is done',a.shape
         a = (1 - a[a <1]).apply(np.log).apply(lambda x: x.fillna(x.min()-1)).abs().round(2)
-        a=(a.HS + a.HL - a.SL)
-        gz.save(a,p)
-    return a
+        a=(a.HS + a.HL - a.SL).rename('PBS'+('','Hudson')[hudson])
+        if n is not None: a=pd.concat([a,n],1).dropna()
+        gz.save(a,'/home/arya/scan/PBS/{}.{}.PBS{}.gz'.format(pop,popxp,('','Hudson')[hudson]))
+        return a
 
 def loadHLIMetrics(path='~/storage/Data/Human/Tibet/HLI'):
     def picardMetrics():
@@ -1663,9 +1768,208 @@ def loadWNG(pop,padding=2000000):
         b['start'] = b.POS - padding
         b['end'] = b.POS + padding
         return b
-    a=pd.read_csv(dataPath + 'Human/scan/gene-info.csv').set_index(['pop'])
-    try:a=a.loc[pop]
-    except: a=a[map(lambda x: pop in x,a.index)]
-    return get_interval(removeChr(a[['POS_hg19', 'chrom', 'gene']].rename(
-        columns={'POS_hg19': 'POS', 'chrom': 'CHROM', 'gene': 'name'}).reset_index().applymap(INT).set_index(
-        ['CHROM', 'POS'])))
+    # a=pd.read_csv(dataPath + 'Human/scan/gene-info.csv').set_index(['pop'])
+    if pop in ['Healthy', 'No-HAPH', 'KGZ']: pop = 'KGZ'
+    a=pd.read_pickle(dataPath + 'Human/scan/WNG.df').set_index('pop').loc[[pop]]
+    a.start-=padding;a.start[a.start<0]=0
+    a.end += padding
+    return a
+
+def mergeResults(path='/home/arya/POP/HAT/CEU+CHB/CEU/',f='chr{}.xpehh.CEU.CHB.gz',out='xpehh.CEU.CHB',CHROMS=range(1,23),outpath=None):
+    if outpath==None: outpath=path
+    os.system('rm -f ' + path + out)
+    for c in CHROMS:os.system('zcat {} >> {}'.format( path + f.format(c),outpath+out))
+    os.system('bgzip -c {0} > {1} && tabix -p vcf {1} && rm -f {0}'.format(outpath+out,outpath+out+'.gz'))
+
+
+
+def scanXPSFS(pops=['CEU','CHB'],nProc=8):
+    from itertools import product
+    from multiprocessing import Pool
+    try:
+        exit()
+        return loadPiarPop(scanPath + 'SFS/{}.{}.df',pops[0], pops[1])
+    except:
+        fname = scanPath + 'SFS/{}.{}.df'.format(pops[0], pops[1])
+        CHROMS=range(1,23)
+        pool = Pool(nProc)
+        a=pd.concat(pool.map(scanXPSFSChr,product([pops],CHROMS))).sort_index()
+        pool.terminate()
+        a.to_pickle(fname)
+        return a
+
+def scanXPSFSChr(args):
+    pops, CHROM=args
+    import Utils.Estimate as est
+    df = gz.FreqPopChrom(pops, str(CHROM))
+    N=pd.concat(map(lambda x: pd.Series({x:len(VCF.ID(x))}),pops))*2
+    w=N/N.sum()
+    df=df.join(df.dot(w).rename('all'))
+    N['all']=N.sum()
+    N = (1 / df[df > 0].min()).astype(int)
+    removeFixedSites = False;
+    winSize = 5e4
+    f = lambda x: pd.DataFrame(scanGenome(x[x.name],
+                                              uf=lambda X: est.Estimate.getEstimate(X.dropna(), n=N[x.name], bins=20,
+                                                                                    removeFixedSites=removeFixedSites,
+                                                                                    normalizeTajimaD=False),
+                                              winSize=int(winSize)))
+    a=df.groupby(level=0, axis=1).apply(f).T.reset_index(level=0, drop=True).T
+    n = df[(df > 0) & (df < 1)].apply(lambda x: scanGenome(x.dropna(), len))
+    n['stat'] = 'n'
+    a = pd.concat([n.set_index('stat', append=True), a]).sort_index()
+    return a
+
+def FstHudson(a,pop):
+    b=a.join(((a['all'] * 4 - a.loc[:,a.columns!='all'].sum(1)) / 2).rename('between'))
+    c=(b.between- b[pop])/b.between
+    c[(b.between<0) | (c<0)]=0
+    return c.dropna()
+
+def gkern(kernlen=21, nsig=3):
+    """Returns a 2D Gaussian kernel Matrix"""
+    interval = (2*nsig+1.)/(kernlen)
+    x = np.linspace(-nsig-interval/2., nsig+interval/2., kernlen+1)
+    kern1d = np.diff(st.norm.cdf(x))
+    kernel_raw = np.sqrt(np.outer(kern1d, kern1d))
+    kernel = kernel_raw/kernel_raw.sum()
+    return kernel
+
+
+from scipy.signal import convolve2d
+import numpy as np
+import scipy.stats as st
+
+
+def gkern(kernlen=21, nsig=3):
+    """Returns a 2D Gaussian kernel array."""
+
+    interval = (2 * nsig + 1.) / (kernlen)
+    x = np.linspace(-nsig - interval / 2., nsig + interval / 2., kernlen + 1)
+    kern1d = np.diff(st.norm.cdf(x))
+    kernel_raw = np.sqrt(np.outer(kern1d, kern1d))
+    kernel = kernel_raw / kernel_raw.sum()
+
+    return kernel
+
+
+def dens(b, filters=[5, 10, 20, 20]):
+    conv = lambda x, k: pd.DataFrame(convolve2d(x.fillna(0), gkern(k, 1), mode='same'), index=x.index,
+                                     columns=x.columns).replace({0: np.nan})
+    x = b.copy(True)
+    for k in filters:
+        x = conv(x, k)
+    return x
+
+
+
+def outlier2D(a,k=200):
+    from scipy.signal import convolve2d
+    def dens(b, filters=[5, 10, 20]):
+        conv = lambda x, k: pd.DataFrame(convolve2d(x.fillna(0), gkern(k, 1), mode='same'), index=x.index,
+                                         columns=x.columns).replace({0: np.nan})
+        x = b.copy(True)
+        for k in filters:
+            x = conv(x, k)
+        return x
+    top = a.set_index('RQ').loc[a.RQ.max()]['LRQP'].unique()
+    b = a[['n', 'LRQP']].astype(str)
+    b = (b.n + '.' + b['LRQP']).value_counts()
+    b.index = pd.MultiIndex.from_tuples(map(lambda x: tuple(map(int, x.split('.'))), b.index.tolist()))
+    b = b.unstack(0).sort_index(ascending=False)
+    c = pd.concat([b.stack().rename('n'), dens(b)[~b.isnull()].loc[top].stack().rename('prob')],
+                  1).dropna().sort_values(
+        'prob')
+
+    # o = c[c.n.cumsum() <= a.shape[0] / 1000] # top .1 %ile #
+    try:
+        o=pd.concat([c[c.n.cumsum()<=k],c[c.n.cumsum()>k].iloc[[0]]])
+    except:
+        print c
+        o=c[c.n.cumsum()<=k]
+    o = a.reset_index().set_index(['LRQP', 'n']).loc[o.index].reset_index().set_index(['CHROM', 'POS'])
+    return o
+def damp(x , a=1):
+    return x.apply(lambda y: y+a*np.sign(y))
+
+def describe(a,cond=True):
+    if cond:
+        f = lambda x: describe(x,False )
+        x=a
+        return pd.concat([f(x),f(x[x>0]),f(-x),f(x[x>x.median()]),f(x[x>=x.quantile(0.95)]),f(x[x>=x.quantile(0.99)])],1,keys=['all','pos','median','q95','q99'])
+    else:
+        desc = a.describe()
+        desc['q9'] = a.quantile(0.9)
+        desc['q95'] = a.quantile(0.95)
+        desc['q99'] = a.quantile(0.99)
+        desc['q999'] = a.quantile(0.999)
+        desc['q9999'] = a.quantile(0.9999)
+        desc['q99999'] = a.quantile(0.99999)
+
+        return desc
+
+def describe2Tail(a):
+    return pd.concat([describe(a),describe(-a)],1,keys=['+','-'])
+
+def savePermille(fname,n=None):
+    a=gz.load(fname)
+    a=a.loc[:, (a.iloc[0].apply(type) != str).tolist()]
+    gz.save(a.apply(lambda x: rankPercentile(x, 1e3,n)),fname.replace('.gz','.permille.gz'))
+    gz.save(a.apply(lambda x: rankPercentile(x, 1e6, n)), fname.replace('.gz', '.ppm.gz'))
+
+def savePermilleTruncated(pops,f='/home/arya/scan/Fisher/{}.{}.gz'):
+    try:
+        n=pd.read_pickle('/home/arya/Kyrgyz/scan/{}.{}.AF.desc.snp.df'.format(pops[0],pops[1]))['+']['all']['count']
+        randomDelay()
+        print pops[:2],"{:,}".format(int(n))
+        savePermille(f.format(pops[0],pops[1]),n)
+    except:
+        print 'Error', pops
+def randomDelay():
+    import time;
+    time.sleep(np.random.rand())
+def TI(a):
+    return a.replace({False:None}).dropna().index
+def loadAprioriList(i=0,x=None):
+    a=pd.read_pickle('/home/arya/Kyrgyz/aprioriList/all.df')
+    if x is not None:
+        print 'Loading {} List'.format(x)
+        a = a.loc[x]
+    else:
+        print 'Loading {} List'.format(a.index.levels[0][i])
+        a = a.loc[a.index.levels[0][i]]
+    a=a.set_index('Category').loc['Protein Coding'].sort_values('Relevance score',ascending=False)
+    return a.drop(['Gifts', 'GC Id'],1).reset_index(drop=True).rename(columns={'Relevance score':'GCscore'})
+
+
+def KS(a):
+    """returns neg-log-pval of Kolgomorov and Smirnov test"""
+    if not a.shape[0]:return 0
+    try:
+        return np.round(abs(np.log10(sc.stats.ks_2samp(a.iloc[:, 0], a.iloc[:, 1])[1])), 1)
+    except:
+        return 0
+
+
+
+split = lambda x, i: [x[:i], x[i:]]
+import random
+def randomPartitionSet(seq,n):
+    return split(random.sample(seq, len(seq)), n)
+
+def intervalsSNPEff(CHROM=None,path=None,fname=None):
+    print CHROM
+    if fname is not None:
+        g = pd.read_pickle(fname)
+    else:
+        g=pd.read_pickle(path+'chr{}.ANN.sdf'.format(CHROM)).loc[[CHROM]]
+
+    g=g.reset_index().set_index('Feature_Type').sort_index().xs('transcript').reset_index(drop=True).set_index(['CHROM','POS']).sort_index()
+
+    a= scanGenome(g.Gene_Name.iloc[:], f=lambda x: [x.unique()]).apply(lambda x: list(x[0])).rename('genes')
+    b= scanGenome(g.Annotation.iloc[:], f=lambda x: [x.value_counts()]).apply(lambda x: x[0])
+    c= scanGenome(g.Annotation_Impact.iloc[:], f=lambda x: [x.value_counts()]).apply(lambda x: x[0])
+    if fname is not None:
+        pd.concat([a, b, c], 1).to_pickle(fname+'.idf')
+    else:
+        pd.concat([a,b,c],1).to_pickle(path+'chr{}.ANN.idf'.format(CHROM))

@@ -49,7 +49,7 @@ class MSMS:
         """
         if dir is None:
             dir= utl.simoutpath;dir+= 'msms/';
-        if not os.path.exists(dir) : os.makedirs(dir)
+        os.system('mkdir -p ' +dir)
         if oneMutationEvery is not None:
             nSS=L/oneMutationEvery
             theta=nSS/sum(1./np.arange(1,n))

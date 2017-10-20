@@ -55,7 +55,7 @@ def getAxRange(ax, axi=0):
     return get_axis_limits(ax, upper=True)[axi] - get_axis_limits(ax, upper=False)[axi]
 
 def getColorMap(n):
-    colors = ['darkblue', 'r', 'darkviolet', 'green', 'k', 'darkorange', 'olive', 'darkgrey', 'chocolate', 'rosybrown',
+    colors = ['darkblue', 'r', 'green', 'darkviolet', 'k', 'darkorange', 'olive', 'darkgrey', 'chocolate', 'rosybrown',
               'gold', 'aqua']
     if n == 1: return [colors[0]]
     if n <= len(colors):
@@ -64,7 +64,7 @@ def getColorMap(n):
 
 
 def getMarker(n, addDashed=True):
-    markers = np.array(['o', '^', 's', 'v', '<', '>', 'D', 'd', 'h', '*', 'p', '3', '2', '4', 'H', '8'])[:n]
+    markers = np.array(['o', '^', 's',  'D', 'd', 'h', '*', 'p','v', '3',  'H', '8','<','2', '4'])[:n]# '<', '>'
     if addDashed: markers = map(lambda x: '--' + x, markers)
     return markers
 
@@ -135,7 +135,7 @@ def GenomeChromosomewise(df, candSNPs=None, genes=None, axes=None,outliers=None)
 
 def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray'], markerSize=20, ylim=None, show=True,
               std_th=None, top_k=None, cutoff=None, common=None, Outliers=None, shade=None, fig=None, ticksize=12,
-              sortedAlready=False,lw=1,axes=None):
+              sortedAlready=False,lw=1,axes=None,shareY=False):
     def reset_index(x):
         if x is None: return None
         if 'CHROM' not in x.columns.values:
@@ -169,7 +169,9 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
 
                 if 'name' in row.index:
                     xy=(row.gstart, MAX)
-                    ax.annotate(row['name'], xy=xy, xytext=xy,horizontalalignment='center',fontsize=10,rotation=90,verticalalignment='bottom')
+                    try:shadename=row['name']
+                    except:shadename=row['gene']
+                    ax.annotate(shadename, xy=xy, xytext=xy,horizontalalignment='center',fontsize=10,rotation=90,verticalalignment='bottom')
 
         ax.scatter(a.index, a, s=markerSize, c=c, alpha=0.8, edgecolors='none')
 
@@ -225,7 +227,7 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
     addGlobalPOSIndex(common, chroms);
     addGlobalPOSIndex(Outliers, chroms)
     if fig is None and axes is None:
-        fig,axes=plt.subplots(columns.size, 1, sharex=True,figsize=(20, columns.size * 4));
+        fig,axes=plt.subplots(columns.size, 1, sharex=True,sharey=shareY,figsize=(20, columns.size * 4));
         if columns.size==1:
             axes=[axes]
     elif axes is None:
@@ -235,7 +237,7 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
     plt.setp(plt.gca().get_xticklabels(), visible=True)
     xlabel='Chromosome'
     if chroms.shape[0]==1:xlabel+=' {}'.format(chroms.index[0])
-    plt.xlabel(xlabel, size=ticksize * 1.5)
+    axes[-1].set_xlabel(xlabel, size=ticksize * 1.5)
     plt.gcf().subplots_adjust(bottom=0.2)
     if fname is not None:
         print 'saving ', fname
