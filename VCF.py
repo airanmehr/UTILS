@@ -1,7 +1,5 @@
 from UTILS import *
 
-from UTILS.BED import BED
-
 class SynchronizedFile:
     @staticmethod
     def processSyncFileLine(x,dialellic=True):
@@ -391,7 +389,18 @@ class gz:
         return fix(a, I, code)
     @staticmethod
     def load(f='/home/arya/POP/HA/GT/chr{}.vcf.gz',i=None,istr=None,index=True,dropIDREFALT=True,indvs=None,pop=None,AA=False,CHROMS=None,pad=None):
-        if pad is not None:i=BED.expand(i, pad)
+        if pad is not None:
+            def expand(i, pad=500000, left=None, right=None):
+                pad = int(pad)
+                x = i.copy(True)
+                if left is not None: pad = left
+                x.start = x.start - pad;
+                if right is not None: pad = right
+                x.end += pad;
+                x.start = max(0, x.start)
+                x['len'] = x.end - x.start
+                return x
+            i=expand(i, pad)
         if CHROMS is not None:return pd.concat(map(lambda x: gz.load(f.format(x)),CHROMS)).sort_index()
         if i is not None:
             try:f=f.format(i.CHROM)

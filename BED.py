@@ -1,6 +1,3 @@
-import numpy as np
-import pandas as pd
-
 from UTILS import *
 def mask(genome,interval=None,keep=True,CHROM=None,start=None,end=None,pad=0,returnIndex=False,full=False):
     if isinstance(interval,str): interval=BED.intervals(interval)

@@ -59,32 +59,7 @@ def DataframetolaTexTable(DF, alignment=None, fname=None,shade=False):
         with open(fname, 'w') as f:  print >> f, csv
     return csv
 
-def files(mypath):
-    return [f for f in os.listdir(mypath) if os.path.isfile(os.path.join(mypath, f))]
 
-
-
-
-def batch(iterable, n=10000000):
-    l = len(iterable)
-    for ndx in range(0, l, n):
-        yield iterable[ndx:min(ndx + n, l)]
-
-
-
-
-
-@numba.vectorize
-def vectorizedLog(x):
-    return float(np.log(x))
-def numbaLog(df):
-    return  pd.DataFrame(vectorizedLog(df.values),columns=df.index,index=df.index).astype(float)
-
-@numba.vectorize
-def vectorizedExp(x):
-    return float(np.exp(x))
-def numbaExp(df):
-    return  pd.DataFrame(vectorizedExp(df.values),columns=df.index,index=df.index).astype(float)
 
 
 

@@ -5,6 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 from subprocess import Popen, PIPE, STDOUT
+
 def mkdir(path):os.system('mkdir -p {}'.format(path))
 parentdir=lambda path:os.path.abspath(os.path.join(path, os.pardir))
 home = os.path.expanduser('~') + '/'
@@ -175,3 +176,18 @@ def polymorphic(data, minAF=1e-9,mincoverage=10,index=True):
     if index:
         return I
     return data[I]
+
+def files(mypath):
+    return [f for f in os.listdir(mypath) if os.path.isfile(os.path.join(mypath, f))]
+
+
+
+
+def batch(iterable, n=10000000):
+    l = len(iterable)
+    for ndx in range(0, l, n):
+        yield iterable[ndx:min(ndx + n, l)]
+
+
+
+
