@@ -4,8 +4,15 @@ import pandas as pd
 from UTILS import *
 from UTILS.BED import maskChr,mask,BED
 from VCF import gz,VCF
-from UTILS.Util import TI,loadPiarPop,roundto,loadGap,dedup,CDF
 
+
+def loadPiarPop(f,pop,popxp,negate=False):
+    load=pd.read_pickle
+    if f[-3:]=='.gz':load=gz.load
+    try:return load(f.format(pop, popxp))
+    except:
+        alpha=(1,-1)[negate]
+        return load(f.format(popxp, pop))*alpha
 class GENOME:
     @staticmethod
     def after(x, pos=1e7):

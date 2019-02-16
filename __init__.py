@@ -25,24 +25,25 @@ def roundto(x, base=50000):
 def ceilto(x, base=50000):
     return int(base * np.ceil(float(x)/base))
 
-class PATH:
+class path:
     def __init__(self,home):
         self.paper = home + 'workspace/timeseries_paper/'
         self.data = home + 'storage/Data/'
         self.scan = self.data + 'Human/scan/'
         self.Dmel = self.data + 'Dmelanogaster/'
         self.OKG = self.data + 'Human/20130502/ALL/'
-        self.paperFigures = PATH.paper + 'figures/'
+        self.paperFigures = self.paper + 'figures/'
         self.plot = home + 'out/plots/';
         self.out = home + 'out/';
         self.simout = self.data + 'SimulationOutFiles/'
-        self.stdout = PATH.out + 'std/'
+        self.stdout = self.out + 'std/'
         self.UKBB = home + '/processed/genetics/imputed/hg38/QCed/'
         mkdir(self.out)
         mkdir(self.simout)
         mkdir(self.plot)
         mkdir(self.stdout)
 
+PATH=path(home)
 
 dedup=lambda x: x[~x.index.duplicated()]
 

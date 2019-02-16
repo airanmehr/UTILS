@@ -10,7 +10,7 @@ import pylab as plt
 import seaborn as sns
 import UTILS.Util as utl
 
-
+from UTILS import *
 def setStyle(style="darkgrid", lw=2, fontscale=1, fontsize=10):
     sns.axes_style(style)
     mpl.rc('font', **{'family': 'serif', 'serif': ['Computer Modern'], 'size': fontsize});
@@ -440,7 +440,7 @@ def setTicks(df):
     plt.xlabel('')
 
 
-def savefig(name, dpi,path=utl.paperFiguresPath,extensions=['pdf','tiff']):
+def savefig(name, dpi,path=PATH.paperFigures,extensions=['pdf','tiff']):
     import os
     for e in extensions:
         os.system('rm -f '+ path+ name + '.'+e)
@@ -855,7 +855,7 @@ class Trajectory:
         Trajectory.Fly(x, reps=[rep], ax=ax, foldOn=foldOn)
 
         ax.set_title('({})  {}.   n={}'.format(j.name + 1, Trajectory.title(j.iloc[0]), x.shape[0]), fontsize=12)
-        if verbose: print '{},'.format(j.name),
+        if verbose: print('{},'.format(j.name),)
 
     @staticmethod
     def title(istr):

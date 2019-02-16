@@ -4,8 +4,6 @@ Copyleft Dec 17, 2015 Arya Iranmehr, PhD Student, Bafna Lab, UC San Diego,  Emai
 from __future__ import print_function
 
 import numba
-import pandas as pd;
-import numpy as np;
 from UTILS import *
 from UTILS.BED import *
 from UTILS.VCF import *
@@ -23,7 +21,6 @@ except:
     pass
 
 
-PATH=PATH()
 
 
 def googleDocURL(name,url):return '=HYPERLINK("{}","{}")'.format(url,name)
@@ -371,13 +368,6 @@ def saveBegelePosAsia(chrom):
 
 
 
-def loadPiarPop(f,pop,popxp,negate=False):
-    load=pd.read_pickle
-    if f[-3:]=='.gz':load=gz.load
-    try:return load(f.format(pop, popxp))
-    except:
-        alpha=(1,-1)[negate]
-        return load(f.format(popxp, pop))*alpha
 
 def pbsi(i,pops):
     def load(p1, p2):
