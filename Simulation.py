@@ -9,11 +9,16 @@ import pandas as pd;
 np.set_printoptions(linewidth=140, precision=5, suppress=True)
 import subprocess, uuid, os,sys
 import pylab as plt
-import Utils.Util as utl
+import UTILS.Util as utl
+
 stdout_old=sys.stdout;sys.stdout=open('/dev/null','w');import simuPOP as sim;sys.stdout=stdout_old # to avoid simuPop welcome message!
+
 
 def sig(x): return 1./(1+np.exp(-x));
 def logit(p): return (np.inf if p==1  else  np.log(p/(1.-p)))
+
+
+
 
 a='';
 
@@ -25,7 +30,20 @@ def fff(msg):
 
 class MSMS:
     @staticmethod
-    def Song(F=200, mu=2*1e-9, L=50000, Ne=1e6,r=4e-9, uid=None, theta=None, msmsFile=None, dir=None):
+    def Simulate(n=200, mu=2*1e-9, L=50000, Ne=1e6,r=1e-9,verbose=False,seed=None,intPos=False):
+        L=int(L)
+        a= MSMS.Song(F=n, mu=mu, L=L, Ne=Ne, r=r,verbose=verbose,seed=seed)
+        c=pd.Series(a.columns)
+        if c.round().value_counts().max()==1:
+            a.columns=c.round().astype(int)
+        elif c.astype(int).value_counts().max()==1:
+            a.columns = c.astype(int)
+        if intPos:
+            a.columns=map(int,np.sort(np.random.choice(L, a.shape[1], replace=False)))
+        return a
+
+    @staticmethod
+    def Song(F=200, mu=2*1e-9, L=50000, Ne=1e6,r=4e-9, uid=None, theta=None, msmsFile=None, dir=None,verbose=False,seed=None):
         """
         Everything is exactly the sam
         """
@@ -34,16 +52,16 @@ class MSMS:
             pop=MSMS.load(filename=msmsFile)[0]
         else:
             if theta:
-                pop=MSMS.MSMS(n=F, numReps=1, theta=theta, rho=2*Ne*(L-1)*r, L=L, Ne=Ne, uid=uid, dir=dir)[0]
+                pop=MSMS.MSMS(n=F, numReps=1, theta=theta, rho=2*Ne*(L-1)*r, L=L, Ne=Ne, uid=uid, dir=dir,verbose=verbose,seed=seed)[0]
             else:
-                pop=MSMS.MSMS(n=F, numReps=1, theta=2*Ne*mu*L, rho=2*Ne*(L-1)*r, L=L, Ne=Ne, uid=uid, dir=dir)[0]
+                pop=MSMS.MSMS(n=F, numReps=1, theta=2*Ne*mu*L, rho=2*Ne*(L-1)*r, L=L, Ne=Ne, uid=uid, dir=dir,verbose=verbose,seed=seed)[0]
         pop.r=r
         pop.Ne=Ne
         pop.L=L
         return pop
     
     @staticmethod
-    def MSMS(n, numReps, theta, rho, L, Ne=None,uid=None,oneMutationEvery=None, dir=dir):
+    def MSMS(n, numReps, theta, rho, L, Ne=None,uid=None,oneMutationEvery=None, dir=dir,verbose=False,seed=None):
         """
         Returns a list of dataframe for each replicate
         """
@@ -56,7 +74,13 @@ class MSMS:
         if uid is None:
             uid=str(uuid.uuid4())
         unique_filename = dir+uid+'.msms'
-        cmd="java -jar -Xmx2g ~/bin/msms/lib/msms.jar -ms {} {} -t {:.0f} -r {:.0f} {:.0f} -oFP 0.000000000000E00 > {}".format(n, numReps, theta, rho, L, unique_filename)
+        if seed is None:
+            seed=''
+        else:
+            seed=' -seed {} '.format(seed)
+        cmd="java -jar -Xmx2g ~/bin/msms/lib/msms.jar -ms {} {} -t {:.0f} -r {:.0f} {:.0f} -oFP 0.000000000000E00 {} > {}".format(n, numReps, theta, rho, L, seed,unique_filename)
+        if verbose:
+            print cmd
         subprocess.call(cmd,shell=True)
         return MSMS.load(unique_filename)
 
@@ -205,6 +229,20 @@ class MSMS:
 
 class Simulation:
     @staticmethod
+    def getPopulationDF(pop):
+        x = pd.concat(map(pd.DataFrame, [map(list, [i.genotype(0), i.genotype(1)]) for i in pop.allIndividuals()]),
+                      keys=range(pop.popSize()))
+        x.columns = list(pop.lociPos())
+        return x
+
+    @staticmethod
+    def getPopulationDF2(pop):
+        x = pd.concat(map(pd.DataFrame, [map(list, [i.genotype(0), i.genotype(1)]) for i in pop.allIndividuals()]),
+                      keys=range(pop.popSize()))
+        x.columns = list(pop.lociPos())
+        return x
+
+    @staticmethod
     def load(ExperimentName, s=0.1, L=50000, experimentID=0, nu0=0.005, isFolded=False, All=False, startGeneration=0,
              maxGeneration=50, numReplicates=3, numSamples=5, step=10, replicates=None, coverage=np.inf):
         path='{}{}/simpop/'.format(utl.simoutpath, ExperimentName) + Simulation.getSimulationName(s=s, L=L, experimentID=experimentID, initialCarrierFreq=nu0, isFolded=isFolded) + '.pkl'
@@ -244,34 +282,28 @@ class Simulation:
                  s=0.05, r=4e-9, Ne=1e6, mu=2e-9, F=200, h=0.5, L=50000, startGeneration=0, numReplicates=3, H0=None,
                  foldInitialAFs=False, save=True, foutName=None,
                  doForwardSimulationNow=True, experimentID=-1,
-                 msmsFile=None, initialCarrierFreq=0, ExperimentName=None, simulateNeutrallyFor=0,
+                 msmsFile=None,initialCarrierFreq=0, ExperimentName=None, simulateNeutrallyFor=0,
                  initialNeutralGenerations=0, ignoreInitialNeutralGenerations=True,
-                 makeSureSelectedSiteDontGetLost=True, onlyKeep=None, verbose=0, sampingTimes=None, minIncrease=0,model=None
+                 makeSureSelectedSiteDontGetLost=True, onlyKeep=None, verbose=0, sampingTimes=None, minIncrease=0,
+                 model=None,initDiploidPop=None,posUnderSelection=-1,haplotypes=False,seed=None
                  ):
         """
         A General Simulation Class; with params
         H0: Dataframe F x m for F individuals and m segregation sites ;  Initial Haplotypes; dataframe with columns as positions 
         """
-        assert ExperimentName != None
-        self.save=save
-        self.model=model
-        self.minIncrease = minIncrease
-        self.samplingTimes=sampingTimes
-        self.initialNeutralGenerations=initialNeutralGenerations
-        self.onlyKeep=onlyKeep
-        self.makeSureSelectedSiteDontGetLost=makeSureSelectedSiteDontGetLost
-        self.ignoreInitialNeutralGenerations=ignoreInitialNeutralGenerations
-        self.msmsFile=msmsFile;self.outpath=outpath; self.outpath=outpath ; self.N=N; self.generationStep=generationStep; self.maxGeneration= maxGeneration; self.s=s; self.r=r;self.Ne=Ne;self.mu=mu; self.F=F; self.h=h; self.L=int(L);self.startGeneration=startGeneration;self.numReplicates=numReplicates;self.setH0(H0);self.foldInitialAFs=foldInitialAFs;self.doForwardSimulationNow=doForwardSimulationNow;self.experimentID=experimentID
-        self.simulateNeutrallyFor=simulateNeutrallyFor
+        self.seed=seed
+        self.s = s;
+        self.r = r;
+        self.Ne = Ne;
+        self.mu = mu;
+        self.F = F;
+        self.h = h;
+        self.L = int(L);
+        self.startGeneration = startGeneration;
+        self.numReplicates = numReplicates;
+        self.posUnderSelection = -1
+        self.initDiploidPop = initDiploidPop
         self.initialCarrierFreq= initialCarrierFreq if initialCarrierFreq else 1./self.F
-        if not os.path.exists(self.outpath) : os.makedirs(self.outpath)
-        self.outpath+=ExperimentName
-        if not os.path.exists(self.outpath) : os.makedirs(self.outpath)
-        self.outpathmsms=self.outpath+'/msms/';self.outpath+='/simpop/'
-        if not os.path.exists(self.outpath) : os.makedirs(self.outpath)
-        if not os.path.exists(self.outpathmsms) : os.makedirs(self.outpathmsms)
-        if self.maxGeneration is None: self.maxGeneration=Simulation.getFixationTime(self.s, Ne=self.F, roundto10=True)
-        self.theta=2*self.Ne*self.mu*self.L
         if foutName is not None:
             self.uid=foutName
             self.uidMSMS=None
@@ -281,21 +313,59 @@ class Simulation:
         else:
             self.uid=str(uuid.uuid4())
             self.uidMSMS=self.uid
+
+
+        if H0 is None:
+            self.simulateH0()
+            H0=self.H0
+        else:
+            self.setH0(H0);
+
+        if posUnderSelection >= 0:
+            if self.positions is None:
+                self.positions=map(int, self.initDiploidPop.lociPos())
+            self.set_posUnderSelection(posUnderSelection)
+        assert ExperimentName != None
+        self.save=save
+        self.model=model
+        self.minIncrease = minIncrease
+        self.samplingTimes=sampingTimes
+        self.initialNeutralGenerations=initialNeutralGenerations
+        self.onlyKeep=onlyKeep
+        self.makeSureSelectedSiteDontGetLost=makeSureSelectedSiteDontGetLost
+        self.ignoreInitialNeutralGenerations=ignoreInitialNeutralGenerations
+        self.msmsFile=msmsFile;self.outpath=outpath; self.outpath=outpath ; self.N=N; self.generationStep=generationStep; self.maxGeneration= maxGeneration;
+        self.foldInitialAFs=foldInitialAFs;self.doForwardSimulationNow=doForwardSimulationNow;self.experimentID=experimentID
+        self.simulateNeutrallyFor=simulateNeutrallyFor
+
+        self.setH0(H0);
+        if not os.path.exists(self.outpath) : os.makedirs(self.outpath)
+        self.outpath+=ExperimentName
+        if not os.path.exists(self.outpath) : os.makedirs(self.outpath)
+        self.outpathmsms=self.outpath+'/msms/';self.outpath+='/simpop/'
+        if not os.path.exists(self.outpath) : os.makedirs(self.outpath)
+        if not os.path.exists(self.outpathmsms) : os.makedirs(self.outpathmsms)
+        if self.maxGeneration is None: self.maxGeneration=Simulation.getFixationTime(self.s, Ne=self.F, roundto10=True)
+        self.theta=2*self.Ne*self.mu*self.L
+        self.pops=[]
+
         if self.model is None:
             import simuPOP.demography as dmg
             self.model=dmg.LinearGrowthModel(T=self.maxGeneration, N0=self.N, NT=self.N)
+
         if self.doForwardSimulationNow:
             self.forwardSimulation()
 
     @staticmethod
-    def simulateSingleLoci(nu0=0.005, T=100, s=0.1, N=1000):
-        print '.',
+    def simulateSingleLoci(nu0=0.005, T=100, s=0.1, N=1000,verbose=True,h=0.5,seed=None):
+        if verbose:
+            print '.',
         step = 1
         pop = sim.Population(size=N, ploidy=2, loci=[1],infoFields=['fitness']);sim.initGenotype(pop, prop=[1-nu0,nu0]);simulator = sim.Simulator(pop.clone(), rep=1);
         # sim.stat(pop, alleleFreq=[0]);        print pop.dvars().alleleFreq[0][1]
         global a;a = "0;;{}\n".format(nu0)
         simulator.evolve(initOps=[sim.InitSex()],
-                         preOps=sim.MapSelector(loci=0, fitness={(0, 0): 1, (0, 1): 1 + s * 0.5, (1, 1): 1 + s}),
+                         preOps=sim.MapSelector(loci=0, fitness={(0, 0): 1, (0, 1): 1 + s *h, (1, 1): 1 + s}),
                          matingScheme=sim.RandomMating(), postOps=[sim.Stat(alleleFreq=[0], step=step),
                                                                    sim.PyEval("'%d;;' % (gen+1)", reps=0, step=step,
                                                                               output=fff), sim.PyEval(
@@ -303,12 +373,23 @@ class Simulation:
                          gen=T)
         return pd.DataFrame(zip(*map(lambda x: x.split(';;'), a.strip().split('\n')))).T.set_index(0)[1].astype(float)
 
+    @staticmethod
+    def _createISOGenicDiploidPopulation(H0):
+        """
+        initHaps : np 2D array which m x nSS where m i number of individual haps and nSS is number of SS
+        return a homozygote diploid population which every haplotype is copied n times
+        """
+        pop = sim.Population(size=H0.shape[0], ploidy=2, loci=H0.shape[1],lociPos=list(H0.columns), infoFields='fitness')
+        for (i,(_,h)) in zip(pop.individuals(),H0.iterrows()):
+            i.setGenotype(h.tolist(),0 );i.setGenotype(h.tolist(),1 )
+        return pop
 
     def createInitialDiploidPopulation(self):
         """
         initHaps : np 2D array which m x nSS where m i number of individual haps and nSS is number of SS
         return a homozygote diploid population which every haplotype is copied n times
         """
+        if self.initDiploidPop is not None: return self.initDiploidPop
         assert int(2*self.N/self.F)==2*self.N/float(self.F)  # N should be  a multiplier of F
         nSS=self.H0.shape[1];n=int(self.N/self.F)
         try:
@@ -318,38 +399,110 @@ class Simulation:
             print(traceback.format_exc())
             print list(self.positions), nSS,n,self.H0.shape[0]
             exit()
+        assert (self.N % self.H0.shape[0]) ==0
         H= [[list(h.values),list(h.values)] for _ in range(n) for _,h in self.H0.iterrows()]
         for (i,h) in zip(pop.individuals(),H): # for each indv assing first and second chromosome
             i.setGenotype(h[0],0 );i.setGenotype(h[1],1 ) #homozygote population of diploid
-    #     sim.stat(pop, alleleFreq=range(nSS));print np.array([pop.dvars().alleleFreq[x][1] for x in range(nSS)])
+        # sim.stat(pop, alleleFreq=range(nSS));print np.array([pop.dvars().alleleFreq[x][1] for x in range(nSS)])
         return pop
-    
-    def simualte(self, pop):
+
+    @staticmethod
+    def getGT(pop, i=None, pos=None):
+        if i == None and pos == None:
+            df = pd.concat([pd.DataFrame([list(i.genotype(0)) for i in pop.individuals()]),
+                            pd.DataFrame([list(i.genotype(1)) for i in pop.individuals()])],
+                           keys=[0, 1]).sort_index().reorder_levels([1, 0]).sort_index()
+            df.columns = map(int, pop.lociPos())
+            return df
+        i = np.where(np.array(pop.lociPos()).astype(int) == pos)[0][0]
+        a, b = [], []
+        for ind in pop.individuals():
+            a += [ind.genotype(0)[i]]
+            b += [ind.genotype(1)[i]]
+        return pd.concat([pd.Series(a), pd.Series(b)], keys=[0, 1]).reorder_levels([1, 0]).sort_index()
+    @staticmethod
+    def createDiploidPopulationFromDataFrame(df):
+        """
+        initHaps : np 2D array which m x nSS where m i number of individual haps and nSS is number of SS
+        return a homozygote diploid population which every haplotype is copied n times
+        """
+        pop = sim.Population(size=df.shape[0]/2, ploidy=2, loci=df.shape[1], lociPos=list(df.columns), infoFields='fitness')
+        for j,i in enumerate(pop.individuals()): # for each indv assing first and second chromosome
+            i.setGenotype(df.loc[j].loc[0].tolist(),0 );i.setGenotype(df.loc[j].loc[1].tolist(),1 )
+        return pop
+
+    @staticmethod
+    def _simualte2(pop, s=0, h=0, r=2e-8, siteUnderSelection=0):
+        N = int(pop.popSize())
+        simulator = sim.Simulator(pop.clone(), rep=1)
+        simulator.evolve(
+            initOps=[sim.InitSex()],
+            preOps=sim.MapSelector(loci=siteUnderSelection, fitness={(0, 0): 1, (0, 1): 1 + s * h, (1, 1): 1 + s}),
+            matingScheme=sim.RandomMating(ops=sim.Recombinator(intensity=r)),
+            gen=1)
+        return simulator.population(0).clone()
+
+    @staticmethod
+    def _simualte(pop,s,h,r,siteUnderSelection,positions,startGeneration,generationStep,maxGeneration,model=None,makeSureSelectedSiteDontGetLost=True):
+        N = int(pop.popSize())
+        if model is None:
+            import simuPOP.demography as dmg
+            model = dmg.LinearGrowthModel(T=maxGeneration, N0=N, NT=N)
+        simulator = sim.Simulator(pop.clone(), rep=1)
+        global a;a = ""
+        pops=[]
+        step=1# this is slow but safe, dont change it
+        simulator.evolve(
+            initOps=[sim.InitSex()],
+            preOps=sim.MapSelector(loci=siteUnderSelection, fitness={(0,0):1, (0,1):1+s*h, (1,1):1+s}),
+            matingScheme=sim.RandomMating(ops=sim.Recombinator(intensity=r),subPopSize=model),
+            postOps=[sim.Stat(alleleFreq=range(int(pop.numLoci()[0])), step=step), sim.PyEval("'Gen %4d;;' % (gen+1)", reps=0,step= step, output=fff), sim.PyEval(r"'{},'.format(map(lambda x: round(x[1],5),alleleFreq.values()))", step=step, output=fff),sim.PyOutput('\n', reps=-1, step=step, output=fff)],
+            gen = maxGeneration)
+        # idx=np.arange(self.generationStep-1,self.maxGeneration,self.generationStep)+self.initialNeutralGenerations
+        print a
+        _,data=zip(*map(lambda x: x.split(';;'),a.strip().split('\n')))
+        data=np.array(map(eval,data))[:,0,:]
+        # print data
+        # if data[-1, self.siteUnderSelection] >= self.initialCarrierFreq + self.minIncrease or self.s == 0 or not self.makeSureSelectedSiteDontGetLost:
+        if data[-1, siteUnderSelection] or s == 0 or not makeSureSelectedSiteDontGetLost:
+            try:
+                pops+=[simulator.extract(0) ]
+            except:
+                print 'Error'
+            return data[int(startGeneration/generationStep):,:]
+        else:
+            return Simulation._simualte()
+
+
+    def simualte(self):
         import simuPOP.demography as dmg
         # model=dmg.ExponentialGrowthModel(T=50, N0=1000, NT=200)
-        simulator = sim.Simulator(pop.clone(), rep=1)
+        simulator = sim.Simulator(self.initDiploidPop.clone(), rep=1)
+        # sim.dump(self.initDiploidPop)
         global a;a = ""
         step=1# this is slow but safe, dont change it
         simulator.evolve(
             initOps=[sim.InitSex()],
-            preOps=sim.MapSelector(loci=self.siteUnderSelection, fitness={(0,0):1, (0,1):1, (1,1):1}),
-            matingScheme=sim.RandomMating(ops=sim.Recombinator(intensity=self.r)),
-            postOps=[sim.Stat(alleleFreq=range(len(self.positions)), step=step), sim.PyEval("'Gen %4d;;' % (gen+1)", reps=0,step= step, output=fff), sim.PyEval(r"'{},'.format(map(lambda x: round(x[1],5),alleleFreq.values()))", step=step, output=fff),sim.PyOutput('\n', reps=-1, step=step, output=fff)],
-            gen = self.initialNeutralGenerations)
-        simulator.evolve(
-            initOps=[sim.InitSex()],
             preOps=sim.MapSelector(loci=self.siteUnderSelection, fitness={(0,0):1, (0,1):1+self.s*self.h, (1,1):1+self.s}),
             matingScheme=sim.RandomMating(ops=sim.Recombinator(intensity=self.r),subPopSize=self.model),
-            postOps=[sim.Stat(alleleFreq=range(len(self.positions)), step=step), sim.PyEval("'Gen %4d;;' % (gen+1)", reps=0,step= step, output=fff), sim.PyEval(r"'{},'.format(map(lambda x: round(x[1],5),alleleFreq.values()))", step=step, output=fff),sim.PyOutput('\n', reps=-1, step=step, output=fff)],
+
+            postOps=[sim.Stat(alleleFreq=range(len(self.positions)), step=step),
+                     sim.PyEval("'Gen %4d;;' % (gen+1)", reps=0,step= step, output=fff), sim.PyEval(r"'{},'.format(map(lambda x: round(x[1],5),alleleFreq.values()))", step=step, output=fff),sim.PyOutput('\n', reps=-1, step=step, output=fff)],
             gen = self.maxGeneration)
         # idx=np.arange(self.generationStep-1,self.maxGeneration,self.generationStep)+self.initialNeutralGenerations
         _,data=zip(*map(lambda x: x.split(';;'),a.strip().split('\n')))
         data=np.array(map(eval,data))[:,0,:]
+        # print data
         # if data[-1, self.siteUnderSelection] >= self.initialCarrierFreq + self.minIncrease or self.s == 0 or not self.makeSureSelectedSiteDontGetLost:
         if data[-1, self.siteUnderSelection] or self.s == 0 or not self.makeSureSelectedSiteDontGetLost:
+            try:
+                self.pops+=[simulator.extract(0) ]
+            except:
+                print 'Error'
             return data[int(self.startGeneration/self.generationStep):,:]
         else:
-            return self.simualte(pop)
+            # print pd.Series(data[:, self.siteUnderSelection])
+            return self.simualte()
     
     def simulateH0(self):
         self.H0=MSMS.Song(F=self.F, L=self.L, Ne=self.Ne, r=self.r, mu=self.mu,uid=self.uidMSMS)
@@ -365,31 +518,16 @@ class Simulation:
     
     def setH0(self,H0):
         self.H0=H0
-        
-    def forwardSimulation(self,selectionOnRandomSite=False,siteUnderSelection=None,H0=None):
-        """
-        returns np 3D array T x nSS x R which T=|{t_1,t_2,..}| (nnumber of times), nSS is number of SS , and R is the number of replicates  
-        """
-        if self.initialCarrierFreq==-1:
-            selectionOnRandomSite=True
-        if H0 is None:
-            if self.H0 is None:
-                H0=MSMS.Song(F=self.F, L=self.L, Ne=self.Ne, r=self.r, mu=self.mu,uid=self.uidMSMS,msmsFile=self.msmsFile,dir=self.outpathmsms)
-            else:
-                H0=self.H010
-        if self.foldInitialAFs:
-            idx=H0.mean(0)>0.5
-            H0.iloc[:,idx.values]=1-H0.iloc[:,idx.values]
-        self.setH0(H0)
-        print self.L,self.H0.shape[1]
-        self.positions_msms=self.H0.columns.values.copy(True)
-        self.positions=sorted(np.random.choice(self.L,self.H0.shape[1],replace=False))
-        self.H0=pd.DataFrame(self.H0.values, columns=self.positions)
-        self.X0=self.H0.mean(0).values
+        self.positions=self.H0.columns.values
+        self.F=self.H0.shape[0]
+
+    def set_BeneficialLoci(self,selectionOnRandomSite=False,siteUnderSelection=None,posUnderSelection =None):
         if selectionOnRandomSite:
             self.set_siteUnderSelection(np.random.randint(0,self.H0.shape[1]))
         elif siteUnderSelection is not None:
             self.set_siteUnderSelection(siteUnderSelection)
+        elif posUnderSelection is not None:
+            self.set_siteUnderSelection(posUnderSelection)
         else:
             if not self.s:
                 self.set_siteUnderSelection(self.X0.argmax())
@@ -400,14 +538,55 @@ class Simulation:
                     if not len(sites):
                         print 'Try again. No site at freq ',self.initialCarrierFreq, self.uid; return
                 self.set_siteUnderSelection(sites[np.random.randint(0,len(sites))])
-        pop= self.createInitialDiploidPopulation()
-        self.X=np.array([self.simualte(pop.clone()) for _ in range(self.numReplicates)]).swapaxes(0, 2).swapaxes(0, 1) #makes sure the site under selection does not go to zero
-        if self.ignoreInitialNeutralGenerations:    self.X=self.X[self.initialNeutralGenerations:,:,:]
+
+    def createInitHaps(self):
+        assignPositions=True
+        if self.H0 is None:
+            H0 = MSMS.Song(F=self.F, L=self.L, Ne=self.Ne, r=self.r, mu=self.mu, uid=self.uidMSMS,
+                           msmsFile=self.msmsFile, dir=self.outpathmsms)
+        else:
+            H0 = self.H0
+            assignPositions=False
+        if self.foldInitialAFs:
+            idx = H0.mean(0) > 0.5
+            H0.iloc[:, idx.values] = 1 - H0.iloc[:, idx.values]
+        self.setH0(H0)
+        if assignPositions:
+            self.positions_msms = self.H0.columns.values.copy(True)
+            self.positions = sorted(np.random.choice(self.L, self.H0.shape[1], replace=False))
+        self.H0 = pd.DataFrame(self.H0.values, columns=self.positions)
+        self.X0 = self.H0.mean(0).values
+
+    def forwardSimulation(self):
+        """
+        returns np 3D array T x nSS x R which T=|{t_1,t_2,..}| (nnumber of times), nSS is number of SS , and R is the number of replicates  
+        """
+
+        if self.seed is not None:
+            import numpy as np
+            np.random.seed(self.seed)
+            sim.setRNG(seed=self.seed)
+        # df = pd.DataFrame([list(i.genotype(j)) for j in range(2) for i in self.initDiploidPop.individuals()])
+        if self.posUnderSelection<0 and self.initDiploidPop is None:
+            self.createInitHaps()
+            self.set_BeneficialLoci()
+            self.initDiploidPop=self.createInitialDiploidPopulation()
+        elif self.initDiploidPop is None:
+            self.createInitHaps()
+            self.initDiploidPop = self.createInitialDiploidPopulation()
+            # self.X0=self.H0.mean().values
+        else:
+            self.X0=Simulation.getGT(self.initDiploidPop).mean().values
+
+        # df = pd.DataFrame([list(i.genotype(j)) for j in range(2) for i in self.initDiploidPop.individuals()])
+        # print pd.concat([df.mean(),self.H0.mean().reset_index(drop=True)],1)
+        self.X=np.array([self.simualte() for _ in range(self.numReplicates)]).swapaxes(0, 2).swapaxes(0, 1)
         self.X=np.append(np.tile(self.X0[:,None],(1,self.X.shape[2]))[None,:,:],self.X,axis=0)
-        if self.onlyKeep is not None:   self.X=self.X[:,self.X0==self.onlyKeep,:]
+
         self.sampleDepths()
         if self.save:
             pd.to_pickle(self,self.outpath+self.uid+'.pkl')
+        # self.createDF()
 
 
      
@@ -502,7 +681,10 @@ class Simulation:
         hard=np.sort(np.append(hard,(x0==MAF).replace({False:None}).dropna().index.values).astype(int))
         return hard
     def createDF(self):
-        self.df=pd.concat([pd.DataFrame(self.X[:,:,r],columns=self.H0.columns,index=pd.MultiIndex.from_product([[r],self.getTrueGenerationTimes()],names=['REP','TIME'])).T for r in range(self.numReplicates)],axis=1)
+        reps=range(self.numReplicates)
+        self.df=pd.concat([pd.DataFrame(self.X[:,:,r],columns=self.positions,index=pd.MultiIndex.from_product([[r],self.getTrueGenerationTimes()],names=['REP','TIME'])).T for r in reps],axis=1)
+        if self.numReplicates==1:
+            self.df=self.df[0]
         return self.df
     def computeCDi(self, EE, depthRate):
         E = EE.loc[depthRate]
@@ -556,8 +738,8 @@ class Simulation:
         T=self.getTrueGenerationTimes()
         Ti=T
         if T[-1]!=self.C[coverage].shape[0]-1: Ti=range(self.C[coverage].shape[0])
-        C=pd.concat([pd.DataFrame(self.C[coverage][Ti,:,i],columns=self.positions,index=T).T for i in range(3)],1,keys=range(self.C[coverage].shape[2]))
-        D=pd.concat([pd.DataFrame(self.D[coverage][Ti,:,i],columns=self.positions,index=T).T for i in range(3)],1,keys=range(self.C[coverage].shape[2]))
+        C=pd.concat([pd.DataFrame(self.C[coverage][Ti,:,i],columns=self.positions,index=T).T for i in range(self.numReplicates)],1,keys=range(self.C[coverage].shape[2]))
+        D=pd.concat([pd.DataFrame(self.D[coverage][Ti,:,i],columns=self.positions,index=T).T for i in range(self.numReplicates)],1,keys=range(self.C[coverage].shape[2]))
         CD=pd.concat([C,D],1,keys=['C','D']).reorder_levels([1,2,0],1).sort_index(1)
         CD.columns.names=['REP','GEN','READ']
         return CD
