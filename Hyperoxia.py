@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 
-pd.options.display.max_rows = 40;
 pd.options.display.expand_frame_repr = False
 import UTILS.Util as utl
 import UTILS.Plots as pplt
@@ -186,3 +185,79 @@ def plotHaplotypes(x,hue=None,track=True,t=130,lite=True,traj=True , km=None,ss=
     if recPos:
         plt.gcf().axes[0].axvline(recPos, c='r', alpha=0.4)
         plt.gcf().axes[1].axvline(recPos, c='r', alpha=0.4)
+
+
+def plotSimupopRec(df,bapos,title='',k=500):
+    np.random.seed(0)
+    def plot(DF, ba, before=None, ax=None):
+        show = False
+        if ax is None:
+            ax = plt.subplots(1, 1, figsize=(6, 4), dpi=100)
+            show = True
+        if before is None:
+            df = DF
+        else:
+            if before > 0:
+                df = DF.loc[:, DF.columns < before]
+            else:
+                df = DF.loc[:, DF.columns > -before]
+        if k > 0:
+            df2 = df.T.sample(k).T
+        else:
+            df2 = df
+        df2.plot(legend=False, c='k', alpha=0.1, ax=ax);
+        DF[[ba]].plot(legend=False, c='r', alpha=0.92, ax=ax);
+        if show:
+            plt.show()
+    ax = plt.subplots(1, 2, figsize=(8, 4), dpi=100)[1];
+    plot(df, bapos, 5e4, ax=ax[0]);
+    plot(df, bapos, -5e4, ax=ax[1])
+    ax[0].set_title('Left')
+    ax[1].set_title('Right')
+    ax[0].set_ylabel('Freq')
+    plt.suptitle(title)
+
+
+def one(H,bapos,r=1e-8,plot=False,recAtPos=None):
+    import UTILS.Simulation as sim
+    recombinator=None
+    if recAtPos is not None:recombinator = sim.Simulation.Recombinator(r,recAtPos)
+    a=sim.Simulation(H0=H,numReplicates=1,s=0.25,recombinator=recombinator,posUnderSelection=bapos,maxGeneration=60,generationStep=5,N=200,ExperimentName='V',save=False,seed=0)
+    df=a.df.T;
+    if plot:
+        df=df.loc[:,sorted([bapos]  +  utl.TI(utl.MAF(df.iloc[0])>0.05).tolist())]
+        plotSimupopRec(df, bapos,'r={}'.format(r))
+    return (df.loc[:,df.columns>5e4].iloc[-1]>0.5).sum()
+
+
+def evolve_recombine_only_at(H,recAti,bapos,r=1e-2, atGen=None,maxGen=50,plot=False,seed=None):
+    import UTILS.Simulation as sim
+    bai=np.where(H.columns==bapos)[0][0]
+    if recAti is None:
+        recombinator = sim.sim.Recombinator(intensity=r)
+    else:
+        recombinator = sim.Simulation.Recombinator(r, recAti)
+    pop=sim.POP.createISOGenicDiploidPopulation(H);X=[sim.POP.freq(pop).rename(0)];t=1
+    Args=lambda pop:{'pop': pop, 'gen': 1, 's': .6, 'h': 0.5, 'siteUnderSelection': bai,'seed':seed, 'r': 0}
+    if atGen is None:
+        for _ in range(maxGen):
+            pop = sim.Simulation._simualtePop(recombinator=recombinator, **Args(pop));
+            X += [sim.POP.freq(pop).rename(t)];
+            t += 1
+    else:
+        for _ in range(atGen):
+            pop=sim.Simulation._simualtePop(**Args(pop));
+            X += [sim.POP.freq(pop).rename(t)];t+=1
+        pop=sim.Simulation._simualtePop(recombinator=recombinator,**Args(pop));X += [sim.POP.freq(pop).rename(t)];t+=1
+
+        for _ in range(atGen+1,maxGen):
+            pop=sim.Simulation._simualtePop(**Args(pop));X += [sim.POP.freq(pop).rename(t)];t+=1
+
+
+    df=pd.concat(X,1).T;df.index.name='TIME';
+    if plot:
+        plotSimupopRec(df, bapos,'r={} atGen={}  seed={}'.format(r,atGen,seed))
+        for ax in plt.gcf().axes:
+            ax.axvline(atGen,c='b')
+        # plt.show()
+    return df

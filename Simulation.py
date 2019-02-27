@@ -66,7 +66,7 @@ class MSMS:
         Returns a list of dataframe for each replicate
         """
         if dir is None:
-            dir= utl.simoutpath;dir+= 'msms/';
+            dir= utl.PATH.simout;dir+= 'msms/';
         os.system('mkdir -p ' +dir)
         if oneMutationEvery is not None:
             nSS=L/oneMutationEvery
@@ -229,23 +229,17 @@ class MSMS:
 
 class Simulation:
     @staticmethod
-    def getPopulationDF(pop):
-        x = pd.concat(map(pd.DataFrame, [map(list, [i.genotype(0), i.genotype(1)]) for i in pop.allIndividuals()]),
-                      keys=range(pop.popSize()))
-        x.columns = list(pop.lociPos())
-        return x
+    def setSeed(seed):
+        if seed is None: return
+        sim.setRNG('rand', seed + 1);
+        np.random.seed(seed)
 
-    @staticmethod
-    def getPopulationDF2(pop):
-        x = pd.concat(map(pd.DataFrame, [map(list, [i.genotype(0), i.genotype(1)]) for i in pop.allIndividuals()]),
-                      keys=range(pop.popSize()))
-        x.columns = list(pop.lociPos())
-        return x
+
 
     @staticmethod
     def load(ExperimentName, s=0.1, L=50000, experimentID=0, nu0=0.005, isFolded=False, All=False, startGeneration=0,
              maxGeneration=50, numReplicates=3, numSamples=5, step=10, replicates=None, coverage=np.inf):
-        path='{}{}/simpop/'.format(utl.simoutpath, ExperimentName) + Simulation.getSimulationName(s=s, L=L, experimentID=experimentID, initialCarrierFreq=nu0, isFolded=isFolded) + '.pkl'
+        path='{}{}/simpop/'.format(utl.PATH.simout, ExperimentName) + Simulation.getSimulationName(s=s, L=L, experimentID=experimentID, initialCarrierFreq=nu0, isFolded=isFolded) + '.pkl'
         sim= pd.read_pickle(path)
         sim.savedPath=path
         if replicates is not None:          sim.setReplicates(sorted(replicates))
@@ -278,20 +272,22 @@ class Simulation:
         self.C = self.C.apply(lambda x: x[:, :, replicates])
         self.D = self.D.apply(lambda x: x[:, :, replicates])
 
-    def __init__(self, outpath=utl.simoutpath, N=1000, generationStep=10, maxGeneration=None,
+    def __init__(self, outpath=utl.PATH.simout, N=1000, generationStep=10, maxGeneration=None,
                  s=0.05, r=4e-9, Ne=1e6, mu=2e-9, F=200, h=0.5, L=50000, startGeneration=0, numReplicates=3, H0=None,
                  foldInitialAFs=False, save=True, foutName=None,
                  doForwardSimulationNow=True, experimentID=-1,
                  msmsFile=None,initialCarrierFreq=0, ExperimentName=None, simulateNeutrallyFor=0,
                  initialNeutralGenerations=0, ignoreInitialNeutralGenerations=True,
                  makeSureSelectedSiteDontGetLost=True, onlyKeep=None, verbose=0, sampingTimes=None, minIncrease=0,
-                 model=None,initDiploidPop=None,posUnderSelection=-1,haplotypes=False,seed=None
+                 model=None,initDiploidPop=None,posUnderSelection=-1,haplotypes=False,seed=None,recombinator=None
                  ):
         """
         A General Simulation Class; with params
         H0: Dataframe F x m for F individuals and m segregation sites ;  Initial Haplotypes; dataframe with columns as positions 
         """
-        self.seed=seed
+        self.recombinator=recombinator
+        if seed is not None:
+            Simulation.setSeed(seed)
         self.s = s;
         self.r = r;
         self.Ne = Ne;
@@ -361,6 +357,7 @@ class Simulation:
         if verbose:
             print '.',
         step = 1
+        Simulation.setSeed(seed)
         pop = sim.Population(size=N, ploidy=2, loci=[1],infoFields=['fitness']);sim.initGenotype(pop, prop=[1-nu0,nu0]);simulator = sim.Simulator(pop.clone(), rep=1);
         # sim.stat(pop, alleleFreq=[0]);        print pop.dvars().alleleFreq[0][1]
         global a;a = "0;;{}\n".format(nu0)
@@ -373,16 +370,7 @@ class Simulation:
                          gen=T)
         return pd.DataFrame(zip(*map(lambda x: x.split(';;'), a.strip().split('\n')))).T.set_index(0)[1].astype(float)
 
-    @staticmethod
-    def _createISOGenicDiploidPopulation(H0):
-        """
-        initHaps : np 2D array which m x nSS where m i number of individual haps and nSS is number of SS
-        return a homozygote diploid population which every haplotype is copied n times
-        """
-        pop = sim.Population(size=H0.shape[0], ploidy=2, loci=H0.shape[1],lociPos=list(H0.columns), infoFields='fitness')
-        for (i,(_,h)) in zip(pop.individuals(),H0.iterrows()):
-            i.setGenotype(h.tolist(),0 );i.setGenotype(h.tolist(),1 )
-        return pop
+
 
     def createInitialDiploidPopulation(self):
         """
@@ -432,18 +420,21 @@ class Simulation:
         return pop
 
     @staticmethod
-    def _simualte2(pop, s=0, h=0, r=2e-8, siteUnderSelection=0):
-        N = int(pop.popSize())
+    def _simualtePop(pop, s=0, h=0.5, r=2e-8, siteUnderSelection=0,gen=1,recombinator=None,seed=None):
+        "Gets population and returns population"
+        Simulation.setSeed(seed)
         simulator = sim.Simulator(pop.clone(), rep=1)
+        if recombinator is None:recombinator=sim.Recombinator(intensity=r)
         simulator.evolve(
             initOps=[sim.InitSex()],
             preOps=sim.MapSelector(loci=siteUnderSelection, fitness={(0, 0): 1, (0, 1): 1 + s * h, (1, 1): 1 + s}),
-            matingScheme=sim.RandomMating(ops=sim.Recombinator(intensity=r)),
-            gen=1)
+            matingScheme=sim.RandomMating(ops=recombinator),
+            gen=gen)
         return simulator.population(0).clone()
 
     @staticmethod
     def _simualte(pop,s,h,r,siteUnderSelection,positions,startGeneration,generationStep,maxGeneration,model=None,makeSureSelectedSiteDontGetLost=True):
+        "Gets population and returns Dataframe, Static method"
         N = int(pop.popSize())
         if model is None:
             import simuPOP.demography as dmg
@@ -454,7 +445,7 @@ class Simulation:
         step=1# this is slow but safe, dont change it
         simulator.evolve(
             initOps=[sim.InitSex()],
-            preOps=sim.MapSelector(loci=siteUnderSelection, fitness={(0,0):1, (0,1):1+s*h, (1,1):1+s}),
+            preOps=sim.MapSelector(loci=siteUnderSelection, fitness={(0, 0): 1, (0, 1): 1 + s * h, (1, 1): 1 + s}),
             matingScheme=sim.RandomMating(ops=sim.Recombinator(intensity=r),subPopSize=model),
             postOps=[sim.Stat(alleleFreq=range(int(pop.numLoci()[0])), step=step), sim.PyEval("'Gen %4d;;' % (gen+1)", reps=0,step= step, output=fff), sim.PyEval(r"'{},'.format(map(lambda x: round(x[1],5),alleleFreq.values()))", step=step, output=fff),sim.PyOutput('\n', reps=-1, step=step, output=fff)],
             gen = maxGeneration)
@@ -462,7 +453,7 @@ class Simulation:
         print a
         _,data=zip(*map(lambda x: x.split(';;'),a.strip().split('\n')))
         data=np.array(map(eval,data))[:,0,:]
-        # print data
+        print data
         # if data[-1, self.siteUnderSelection] >= self.initialCarrierFreq + self.minIncrease or self.s == 0 or not self.makeSureSelectedSiteDontGetLost:
         if data[-1, siteUnderSelection] or s == 0 or not makeSureSelectedSiteDontGetLost:
             try:
@@ -475,16 +466,19 @@ class Simulation:
 
 
     def simualte(self):
+        "Gets population and returns Dataframe, Class method"
         import simuPOP.demography as dmg
         # model=dmg.ExponentialGrowthModel(T=50, N0=1000, NT=200)
         simulator = sim.Simulator(self.initDiploidPop.clone(), rep=1)
         # sim.dump(self.initDiploidPop)
         global a;a = ""
+        if self.recombinator is None:
+            self.recombinator=sim.Recombinator(intensity=self.r)
         step=1# this is slow but safe, dont change it
         simulator.evolve(
             initOps=[sim.InitSex()],
             preOps=sim.MapSelector(loci=self.siteUnderSelection, fitness={(0,0):1, (0,1):1+self.s*self.h, (1,1):1+self.s}),
-            matingScheme=sim.RandomMating(ops=sim.Recombinator(intensity=self.r),subPopSize=self.model),
+            matingScheme=sim.RandomMating(ops=self.recombinator,subPopSize=self.model),
 
             postOps=[sim.Stat(alleleFreq=range(len(self.positions)), step=step),
                      sim.PyEval("'Gen %4d;;' % (gen+1)", reps=0,step= step, output=fff), sim.PyEval(r"'{},'.format(map(lambda x: round(x[1],5),alleleFreq.values()))", step=step, output=fff),sim.PyOutput('\n', reps=-1, step=step, output=fff)],
@@ -492,7 +486,6 @@ class Simulation:
         # idx=np.arange(self.generationStep-1,self.maxGeneration,self.generationStep)+self.initialNeutralGenerations
         _,data=zip(*map(lambda x: x.split(';;'),a.strip().split('\n')))
         data=np.array(map(eval,data))[:,0,:]
-        # print data
         # if data[-1, self.siteUnderSelection] >= self.initialCarrierFreq + self.minIncrease or self.s == 0 or not self.makeSureSelectedSiteDontGetLost:
         if data[-1, self.siteUnderSelection] or self.s == 0 or not self.makeSureSelectedSiteDontGetLost:
             try:
@@ -561,11 +554,7 @@ class Simulation:
         """
         returns np 3D array T x nSS x R which T=|{t_1,t_2,..}| (nnumber of times), nSS is number of SS , and R is the number of replicates  
         """
-
-        if self.seed is not None:
-            import numpy as np
-            np.random.seed(self.seed)
-            sim.setRNG(seed=self.seed)
+        import numpy as np
         # df = pd.DataFrame([list(i.genotype(j)) for j in range(2) for i in self.initDiploidPop.individuals()])
         if self.posUnderSelection<0 and self.initDiploidPop is None:
             self.createInitHaps()
@@ -680,9 +669,11 @@ class Simulation:
             hard=np.append(hard, (dup*x0==numDup*MAF).replace({False:None}).dropna().index.values)
         hard=np.sort(np.append(hard,(x0==MAF).replace({False:None}).dropna().index.values).astype(int))
         return hard
-    def createDF(self):
+
+    @property
+    def df(self):
         reps=range(self.numReplicates)
-        self.df=pd.concat([pd.DataFrame(self.X[:,:,r],columns=self.positions,index=pd.MultiIndex.from_product([[r],self.getTrueGenerationTimes()],names=['REP','TIME'])).T for r in reps],axis=1)
+        self.df=pd.concat([pd.DataFrame(self.X[:,:,r],columns=self.positions,index=pd.MultiIndex.from_product([[r],range(self.X.shape[0])],names=['REP','TIME'])).T for r in reps],axis=1)
         if self.numReplicates==1:
             self.df=self.df[0]
         return self.df
@@ -744,6 +735,70 @@ class Simulation:
         CD.columns.names=['REP','GEN','READ']
         return CD
 
+    @staticmethod
+    def Recombinator(rate, loci):
+        """
+        Recombination at loci, after variant index. Loci can take value in [0, NumSNPs-1]
+        Args:
+            rate: recombination rate
+            loci: index of the loci in which rec is is being performed
+        Returns: recombinator which is an argument of Simulation, _simulation2 and evolve. It can be list of loci
+        """
+        if not isinstance(loci, list):
+            loci = [loci]
+        return sim.Recombinator(intensity=rate, loci=loci)
+
+
+class POP:
+    @staticmethod
+    def createISOGenicDiploidPopulation(df):
+        """
+        initHaps : np 2D array which m x nSS where m i number of individual haps and nSS is number of SS
+        return a homozygote diploid population which every haplotype is copied n times
+        """
+        pop = sim.Population(size=df.shape[0], ploidy=2, loci=df.shape[1], lociPos=list(df.columns),
+                             infoFields='fitness')
+        for (i, (_, h)) in zip(pop.individuals(), df.iterrows()):
+            i.setGenotype(h.tolist(), 0);
+            i.setGenotype(h.tolist(), 1)
+        return pop
+
+    @staticmethod
+    def toDF(pop):
+        x = pd.concat(map(pd.DataFrame, [map(list, [i.genotype(0), i.genotype(1)]) for i in pop.allIndividuals()]),
+                      keys=range(pop.popSize()))
+        x.columns = list(pop.lociPos())
+        return x
+
+    @staticmethod
+    def freq(pop):
+        sim.stat(pop, alleleFreq=range(pop.numLoci()[0]), vars=['alleleFreq'])
+        return pd.Series(pd.DataFrame(pop.vars()['alleleFreq']).loc[1].reindex().values,map(int,pop.lociPos())).fillna(0)
+
+    @staticmethod
+    def Haplotypes(pop,counts=False,unique=True):
+        if isinstance(pop,sim.Population):
+            a=POP.toDF(pop)
+        else:
+            a=pop
+
+        H=a.reset_index(drop=True)
+        H.columns=map(int,H.columns)
+        b=H.loc[H.sum(1).sort_values().index].astype(str).apply(lambda x: ''.join(x), 1).reset_index(drop=True)
+        if counts:
+            return b.value_counts().sort_index()
+        else:
+            if unique:
+                b=b.drop_duplicates()
+            return b.loc[b.sort_values().index].reset_index(drop=True)
+
+
+    @staticmethod
+    def establish(H, ba, k=5):
+        N = H.shape[0]
+        car = H[H[ba] == 1]
+        n = car.shape[0]
+        return pd.concat([car.iloc[np.random.choice(n, k)], H.iloc[np.random.choice(N, N - k)]]).reset_index(drop=True)
 
 class Drift:
     @staticmethod
@@ -797,3 +852,7 @@ class Drift:
     @staticmethod
     def simulateAFs(N,x,T,M):
         return pd.DataFrame([Drift.simulateAF(N,x,T) for _ in range(M)],columns=T)
+
+
+
+

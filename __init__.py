@@ -1,11 +1,12 @@
 '''
 Copyleft May 23, 2016 Arya Iranmehr, PhD Student, Bafna Lab, UC San Diego,  Email: airanmehr@gmail.com
 '''
-import os
+import os,sys
 import numpy as np
 import pandas as pd
+import scipy.stats as st
+import scipy as sc
 from subprocess import Popen, PIPE, STDOUT
-
 def mkdir(path):os.system('mkdir -p {}'.format(path))
 parentdir=lambda path:os.path.abspath(os.path.join(path, os.pardir))
 home = os.path.expanduser('~') + '/'
@@ -45,6 +46,7 @@ class path:
         mkdir(self.stdout)
 
 PATH=path(home)
+
 
 dedup=lambda x: x[~x.index.duplicated()]
 

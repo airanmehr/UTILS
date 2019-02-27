@@ -1,6 +1,3 @@
-import numpy as np
-import pandas as pd
-
 from UTILS import *
 from UTILS.BED import maskChr,mask,BED
 from VCF import gz,VCF

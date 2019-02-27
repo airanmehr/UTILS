@@ -7,8 +7,8 @@ import numba
 from UTILS import *
 from UTILS.BED import *
 from UTILS.VCF import *
+from UTILS.EE import *
 from UTILS.Genome import *
-
 
 
 np.set_printoptions(linewidth=140, precision=5, suppress=True)
@@ -20,11 +20,7 @@ try:
 except:
     pass
 
-
-
-
 def googleDocURL(name,url):return '=HYPERLINK("{}","{}")'.format(url,name)
-import scipy.stats as st
 
 
 def FoldOn(y,foldOn):
@@ -58,11 +54,6 @@ def DataframetolaTexTable(DF, alignment=None, fname=None,shade=False):
     if fname is not None:
         with open(fname, 'w') as f:  print >> f, csv
     return csv
-
-
-
-
-
 
 
 
