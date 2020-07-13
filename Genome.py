@@ -1,6 +1,9 @@
 from UTILS import *
 from UTILS.BED import maskChr,mask,BED
-from VCF import gz,VCF
+try:
+    from VCF import gz,VCF
+except:
+    pass
 
 
 def loadPiarPop(f,pop,popxp,negate=False):

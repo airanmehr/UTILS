@@ -215,6 +215,31 @@ class pval:
 
 class Enrichment:
     @staticmethod
+    def load_GO_fly():
+        fin = PATH.data + "GO/GO.fly.df"
+        try:
+            return pd.read_pickle(fin)
+        except:
+            go = Enrichment.loadAssociations().dropna().groupby(level=0).apply(
+                lambda x: pd.Series(list(x.iloc[0]))).reset_index().drop('level_1', 1)
+
+            go.to_pickle(fin)
+
+    @staticmethod
+    def load_go_names():
+        from goatools.obo_parser import GODag
+        fin = PATH.data + "GO/GO.names.df"
+        try:
+            raise 0
+            return pd.read_pickle(fin)
+        except:
+            obodag = GODag(PATH.data + "GO/go-basic.obo")
+            ret = []
+            for k in obodag.keys():
+                v = obodag[k]
+                ret += [[k, v.name, v.namespace]]
+            pd.DataFrame(ret, columns=['go', 'name', 'namespace']).to_pickle(fin)
+    @staticmethod
     def GOEA(bg, study, assoc=None, alpha=0.05, propagate=False):
         """
         Args:

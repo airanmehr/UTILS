@@ -103,12 +103,10 @@ class Dmel:
         Returns:
         """
         # ftp://ftp.flybase.net/releases/current/precomputed_files/go/gene_association.fb.gz
-        a=pd.read_csv(PATH.Dmel+'gene_association.fb',sep='\t',comment='!',header=None).set_index(1)[4].rename('GO')
-        a.index.name=None
-        if relation:
-            return a
-        else:
-            return a.groupby(level=0).apply(lambda x: set(x.tolist()))
+        g = pd.read_csv(utl.PATH.Dmel + 'gene_association.fb', sep='\t', comment='!', header=None)[
+            [8, 4, 1, 2]].drop_duplicates()
+        g.columns = ['ontology', 'go', 'fngn', 'name']
+        return g
 
     @staticmethod
     def geneCoordinates(assembly=5,allOrganisms=False):
@@ -994,7 +992,7 @@ def reinstallAILibs():
 class PLINKGWAS():
 
     @staticmethod
-    def load(X,CHROMS=range(1,23)+['X'],col='P',GWASID=1,cutoff=None,takelog=True,
+    def load(X,CHROMS=list(range(1,23))+['X'],col='P',GWASID=1,cutoff=None,takelog=True,
              path= PATH.UKBB+'GWAS/train/gwas{}/'):
         """
         :param col: OR or P

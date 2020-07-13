@@ -308,7 +308,7 @@ class BED:
         subprocess.call('bgzip {}'.format(fout_path),shell=True)
 
     @staticmethod
-    def xmap_bed(Interval=None,variants=None,hgFrom=19, hgTo=38,removeXPchromSNPs=True,keepOnlyPos=False,chainPath=home+'storage/Data/Human/CrossMap-0.2.5/chains'):
+    def xmap_bed(Interval=None,variants=None,hgFrom=19, hgTo=38,removeXPchromSNPs=True,keepOnlyPos=False,chainPath=home+'storage/Data/Human/CrossMap-0.2.5/chains',xmap='/home/arya/miniconda2/bin/CrossMap.py',verbose=False):
         """
         Args:
             hgFrom: (int) assembly version eg: 19
@@ -339,8 +339,9 @@ class BED:
         import subprocess
         with open(in_file ,'w') as f1:
             BED.save(interval.reset_index()[['CHROM','start','end','index']], fhandle=f1,intervalName='index')
-        cmd = "/home/arya/miniconda2/bin/CrossMap.py bed  {} {} {}".format(chainfile, in_file, out_file)
-        # print cmd
+        cmd = "{} bed  {} {} {}".format(xmap,chainfile, in_file, out_file)
+        # if verbose:
+        #     print cmd
         subprocess.call(cmd,shell=True)
         maped=pd.DataFrame(map(lambda x: x.split(), open(out_file).readlines()),columns=['CHROM','start','end','ID']).dropna()
         maped.ID=maped.ID.astype('int')

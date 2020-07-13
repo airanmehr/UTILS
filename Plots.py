@@ -9,7 +9,7 @@ import pandas as pd
 import pylab as plt
 import seaborn as sns
 import UTILS.Util as utl
-
+import UTILS.Hyperoxia as htl
 from UTILS import *
 def setStyle(style="darkgrid", lw=2, fontscale=1, fontsize=10):
     sns.axes_style(style)
@@ -137,7 +137,7 @@ def GenomeChromosomewise(df, candSNPs=None, genes=None, axes=None,outliers=None)
 
 def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray'], markerSize=20, ylim=None, show=True,
               std_th=None, top_k=None, cutoff=None, common=None, Outliers=None, shade=None, fig=None, ticksize=16,
-              sortedAlready=False,lw=1,axes=None,shareY=False,color=None,CHROMLen=None):
+              sortedAlready=False,lw=1,axes=None,shareY=False,color=None,CHROMLen=None,alpha=0.4,shade2=None):
     def reset_index(x):
         if x is None: return None
         if 'CHROM' not in x.columns.values:
@@ -158,12 +158,12 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
     if not show:
         plt.ioff()
     from itertools import cycle
-    def plotOne(b, d, name, chroms,common,shade,ax):
+    def plotOne(b, d, name, chroms,common,shade,shade2,ax):
         a = b.dropna()
         c = d.loc[a.index]
         if ax is None:
             ax=plt.gca()
-        if shade is not None:
+        def plotShade(shade,c):
             for _ ,  row in shade.iterrows():
                 if shareY:
                     MAX = DF.replace({np.inf: None}).max().max()
@@ -171,15 +171,19 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
                 else:
                     MAX = a.replace({np.inf: None}).max()
                     MIN = a.replace({-np.inf: None}).min()
-                ax.fill_between([row.gstart, row.gend], MIN,MAX, color='b', alpha=0.4)
-
+                ax.fill_between([row.gstart, row.gend], MIN,MAX, color=c, alpha=alpha)
                 if 'name' in row.index:
                     if row['name'] == 1: row.gstart -=  1e6
                     if row['name']== 8: row.gstart=row.gend+1e6
+                    if row['name'] == 'LR2.1': row.gstart -=  2e6
+                    if row['name'] == 'LR2.2': row.gstart += 1e6
                     xy=(row.gstart, (MAX*1.1))
                     try:shadename=row['name']
                     except:shadename=row['gene']
                     ax.text(xy[0],xy[1],shadename,fontsize=ticksize+2,rotation=0,ha= 'center', va= 'bottom')
+        if shade is not None: plotShade(shade,c='b')
+        if shade2 is not None: plotShade(shade2,c='r')
+
                     # ax.annotate('   '+shadename,
                     #             # bbox=dict(boxstyle='round,pad=1.2', fc='yellow', alpha=0.3),
                     #             xy=xy, xytext=xy, xycoords='data',horizontalalignment='center',fontsize=ticksize,rotation=90,verticalalignment='bottom')
@@ -213,7 +217,7 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
         ax.set_ylabel(name, fontsize=ticksize * 1.5)
         if chroms.shape[0]>1:
             plt.xticks([x for x in chroms.mid], [str(x) for x in chroms.index], rotation=-90, fontsize=ticksize * 1.5)
-        plt.setp(plt.gca().get_xticklabels(), visible=False)
+        # plt.setp(plt.gca().get_xticklabels(), visible=False)
         plt.locator_params(axis='y', nbins=4)
         mpl.rc('ytick', labelsize=ticksize)
         if ylim is not None:    plt.ylim(ymin=ylim)
@@ -234,16 +238,18 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
     df['gpos'] = df.POS + chroms.offset.loc[df.CHROM].values
     df['color'] = chroms.color.loc[df.CHROM].values
     df.set_index('gpos', inplace=True);
-
-    if shade is not None:
-        shade['gstart']=shade.start #
-        shade['gend']=shade.end #
-        if chroms.shape[0]>1:
-            shade['gstart']+= chroms.offset.loc[shade.CHROM].values
-            shade['gend']+=+ chroms.offset.loc[shade.CHROM].values
+    def fff(shade):
+        shade['gstart'] = shade.start  #
+        shade['gend'] = shade.end  #
+        if chroms.shape[0] > 1:
+            shade['gstart'] += chroms.offset.loc[shade.CHROM].values
+            shade['gend'] += + chroms.offset.loc[shade.CHROM].values
         if 'name' in shade.columns:
-            shade.sort_values('gstart',ascending=False,inplace=True)
-            shade['ID']=range(1,shade.shape[0]+1)
+            shade.sort_values('gstart', ascending=False, inplace=True)
+            shade['ID'] = range(1, shade.shape[0] + 1)
+        return shade
+    if shade is not None: shade=fff(shade)
+    if shade2 is not None: shade2 = fff(shade2)
     addGlobalPOSIndex(common, chroms);
     addGlobalPOSIndex(Outliers, chroms)
     if fig is None and axes is None:
@@ -259,12 +265,14 @@ def Manhattan(data, columns=None, names=None, fname=None, colors=['black', 'gray
         else:
             if shade is not None and 'name' in shade.columns:
                 sh= shade.drop('name', 1)
-        plotOne(df[columns[i]], df.color, names[i], chroms,common, sh,axes[i])
-    plt.setp(plt.gca().get_xticklabels(), visible=True)
+        plotOne(df[columns[i]], df.color, names[i], chroms,common, sh,shade2,axes[i])
+    # plt.setp(plt.gca().get_xticklabels(), visible=True)
     xlabel='Chromosome'
-    if chroms.shape[0]==1:xlabel+=' {}'.format(chroms.index[0])
+    if chroms.shape[0]==1:
+        xlabel+=' {}'.format(chroms.index[0])
     axes[-1].set_xlabel(xlabel, size=ticksize * 1.5)
-    plt.gcf().subplots_adjust(bottom=0.2)
+
+    plt.gcf().subplots_adjust(bottom=0.2,hspace=0.05)
     if fname is not None:
         print ('saving ', fname)
         plt.savefig(fname)
@@ -491,7 +499,14 @@ def overlap(I, a,start=None,end=None):
     return I[(I.start <= a.index[-1]) & (I.end >= a.index[0])]
 
 
-def plotTracks(a,i=None,dosharey=True,marker='o',ls='',alpha=0.3,CHROM=None,xmin=None,xmax=None,ymax=None,ymin=None,hline=None,dmel=False,ntracks=4,dpi=200,figWidth=7,colors=None,cjet=None,markersize=4,CMAP=None,genesToColor=None,oneColorCMAP=False,plotColorBar=True,hue=None,ax=None,DROP_CR_Genes=False):
+def plotTracks(a,i=None,dosharey=True,marker='o',ls='',alpha=0.3,CHROM=None,xmin=None,xmax=None,
+               ymax=None,ymin=None,hline=None,dmel=False,ntracks=-1,dpi=200,figWidth=7,colors=None,
+               cjet=None,markersize=4,CMAP=None,genesToColor=None,oneColorCMAP=False,plotColorBar=True,
+               hue=None,ax=None,DROP_CR_Genes=False,subsample=None,fontsize=12,fig=None,alpha_shade=0.2):
+    if subsample is not None:
+        if subsample<a.shape[0] and subsample>0:
+            np.random.seed(0)
+            a=a.sample(subsample).sort_index()
     GENECOORDS=None
     if ntracks>0:
         if CHROM is None:
@@ -517,8 +532,9 @@ def plotTracks(a,i=None,dosharey=True,marker='o',ls='',alpha=0.3,CHROM=None,xmin
         if ntracks<0:plt.gcf().axes[-1].set_ylim([mi, ma])
     n=a.shape[1]
     if ntracks>0:n+=1
-    if ax is None:
+    if ax is None and fig is None:
         fig, ax = plt.subplots(n, 1, sharex=True,figsize=(figWidth,n*1.5),dpi=dpi)
+
     if ntracks>0:
         axgene=ax[-1]
     if n>1:ax=ax.reshape(-1)
@@ -544,6 +560,8 @@ def plotTracks(a,i=None,dosharey=True,marker='o',ls='',alpha=0.3,CHROM=None,xmin
             dfc=df[['POS',col,'c']].dropna()
             sc=ax[ii].scatter(dfc.POS,dfc[col], c=dfc.c.values,cmap=cmap,alpha=alpha,s=markersize)
             if plotColorBar:
+                if fig is None:
+                    fig=plt.gcf()
                 cbaxes = fig.add_axes([0.905, 0.537, 0.02, 0.412]) #[ lower left corner X, Y, width, height]
                 tl=np.linspace(0,1,5)
                 cb = plt.colorbar(sc, cax=cbaxes, ticks=tl, orientation='vertical')
@@ -566,7 +584,7 @@ def plotTracks(a,i=None,dosharey=True,marker='o',ls='',alpha=0.3,CHROM=None,xmin
 
         if hline is not None:ax[ii].axhline(hline, c='r', alpha=0.6)
         ax[ii].set_ylabel(a.columns[ii])
-        setSize(ax[ii],12)
+        setSize(ax[ii],fontsize)
     # plotGeneTrack(overlap(kutl.GENECOORS.loc[[i.CHROM]], 0,xmin, xmax), ax[-1], minx=a.index.min(), maxx=a.index.max())
     if xmin is None:
         xmin, xmax=a.index[0],a.index[-1]
@@ -584,10 +602,13 @@ def plotTracks(a,i=None,dosharey=True,marker='o',ls='',alpha=0.3,CHROM=None,xmin
     if dosharey:sharey()
 
     if i is not None:
-        for ii in range(a.shape[1]): ax[ii].fill_between([i.start, i.end], ax[ii].get_ylim()[0], ax[ii].get_ylim()[1],
-                                                         color='k', alpha=0.2)
-        ax[-1].fill_between([i.start, i.end], ax[ii].get_ylim()[0], ax[ii].get_ylim()[1], color='k', alpha=0.2)
-    if CHROM is not None:ax[-1].set_xlabel('Chromosome {}'.format(CHROM))
+        for ii in range(a.shape[1]):
+            ax[ii].fill_between([i.start, i.end], ax[ii].get_ylim()[0], ax[ii].get_ylim()[1], color = 'k', alpha = alpha_shade)
+        # ax[-1].fill_between([i.start, i.end], ax[ii].get_ylim()[0], ax[ii].get_ylim()[1], color='k', alpha=alpha_shade)
+    if CHROM is not None:
+        jj=-1
+        if plotColorBar: jj-=1
+        ax[jj].set_xlabel('Chromosome {}'.format(CHROM))
     # plt.tight_layout()
     plt.gcf().subplots_adjust(top=0.95, left=0.09)
     if CMAP is not None:
@@ -611,7 +632,7 @@ def plotTracksList(a,i,marker=None, ls='-',shade=True, alpha=0.3,height=1.5):
         ax[ii].set_ylabel(a.index[ii])
     plotGeneTrack(overlap(kutl.GENECOORS.loc[[i.CHROM]], None,start=i.start,end=i.end), ax[-1],minx=a.iloc[0].index.min(),maxx=a.iloc[0].index.max())
     if shade:
-        ax[-1].fill_between([i.start, i.end], ax[-1].get_ylim()[0], ax[-1].get_ylim()[1], color='k', alpha=0.2)
+        ax[-1].fill_between([i.start, i.end], ax[-1].get_ylim()[0], ax[-1].get_ylim()[1], color='k', alpha=0.1)
     plt.xlabel('Chromosome {}'.format(i.CHROM))
     plt.gcf().subplots_adjust(top=0.95, left=0.09,hspace=0.03)
 
@@ -706,17 +727,12 @@ def plotPBS(i,pops,additionalPairs=[],lite=0,AA=False,delta=True,pad=500000,pos=
 
 class Trajectory:
     @staticmethod
-    def aug(y,rep=1,pop='H'):
-        x = y.copy(True)
-        x.columns = pd.MultiIndex.from_product([[pop], x.columns, [rep]], names=['POP', 'Gen', 'REP'])
-        return x
-    @staticmethod
     def Fly(xx,reps=[1],title='',pop='H',ax=None,hue=None,color=None,sumFreqCutoff=0,subsample=-1,titles=None,
-            foldOn=None,fname=None,alpha=None,suptitle=None,logscale=True):
+            foldOn=None,fname=None,alpha=None,suptitle=None,logscale=True,fontsize=14,ticksSize=10,noticks=[7, 15]):
 
         if len(xx.columns.names)<2:
-            xx=Trajectory.aug(xx)
-        x=xx[xx.sort_index(1).H.loc[:,pd.IndexSlice[:,reps]].sum(1)>sumFreqCutoff]
+            xx=htl.aug(xx)
+        x=xx[xx.sort_index(1)[pop].loc[:,pd.IndexSlice[:,reps]].sum(1)>sumFreqCutoff]
         if subsample>0 and subsample<x.shape[0]:
             ii=np.random.choice(x.shape[0], subsample, replace=False)
             x=x.iloc[ii]
@@ -737,29 +753,36 @@ class Trajectory:
             if not i:
                 if title!='':title='('+title+')'
             ax=axes[i]
-            Trajectory.FlyRep(x.xs(rep,1,2), suff=' Rep. {}'.format(rep),pop=pop,ax=ax,hue=hue,title=title,foldOn=foldOn,alpha=alpha,logscale=logscale)
+            xrep=x.xs(rep, 1, 2)[pop]
+            if len(noticks):
+                for t in noticks:
+                    if t in xrep.columns:
+                        xrep=xrep.drop(t,1)
+            Trajectory.FlyRep(xrep, suff=' Rep. {}'.format(rep),ax=ax,hue=hue,title=title,foldOn=foldOn,alpha=alpha,logscale=logscale)
 
         if fname is not None:plt.savefig(fname)
         for ax in axes:
-            setSize(ax,10)
+            setSize(ax,ticksSize)
             if logscale:
-                ax.set_xlim(100,290)
+                ax.set_xlim(99,300)
         if titles is not None:
             for ax,t in zip(axes,titles):
-                ax.set_title(t,fontsize=14)
-        axes[0].set_ylabel('Allele Frequency', fontsize=14)
-        axes[(0,1)[len(axes)==3]].set_xlabel('Generation', fontsize=14)
+                ax.set_title(t,fontsize=fontsize)
+        axes[0].set_ylabel('Allele Frequency', fontsize=fontsize)
+        axes[(0,1)[len(axes)==3]].set_xlabel('Generation', fontsize=fontsize)
         if len(reps)==3:
             plt.gcf().tight_layout(pad=0.1)
         if suptitle:
             # plt.suptitle(suptitle,fontsize=14)
             # plt.gcf().tight_layout(pad=0.1, rect=[0.0, 0, 0.9, .9])
             axt=axes[-1].twinx()
-            axt.set_ylabel(suptitle,fontsize=14)
+            axt.set_ylabel(suptitle,fontsize=fontsize)
             axt.set_yticks([])
+            # plt.setp(axes[-1].get_yticklabels(), visible=False)
+        # axes[-1].set_yticks([])
 
     @staticmethod
-    def FlyRep(zz, suff='', pop='H', ax=None, hue=None, title='', hueDenovo=False, foldOn=None,alpha=None,logscale=True):
+    def FlyRep(zz, suff='', ax=None, hue=None, title='', hueDenovo=False, foldOn=None,alpha=None,logscale=True):
         if not zz.shape[0]: return
         if alpha is None: alpha = 0.12
 
@@ -773,8 +796,10 @@ class Trajectory:
                     fold = x[-foldOn] > 0.5
                 x.loc[fold, :] = 1 - x.loc[fold, :]
                 x = x.T
-            g = map(str, x.index.values.astype(int))
+            g = list(map(str, x.index.values.astype(int)))
+
             if logscale:x.index = x.index.values + 100
+            x=x.rename({280:290})
             #         print x
             title = pref + suff
             # title = ''
@@ -806,22 +831,23 @@ class Trajectory:
             if logscale:
                 ax.set_xscale("log", basex=2);
                 ax.get_xaxis().set_major_formatter(mpl.ticker.ScalarFormatter())
+                # print(x.index.tolist())
                 ax.set_xticks(x.index)
-
                 ax.set_xticklabels(g)
+
 
             # ax.tick_params(axis='both', which='both', bottom='on', top='on', labelbottom='on', right='on', left='on',
             #                labelleft='on', labelright='on')
 
         if ax is None: fig, ax = plt.subplots(1, 1, sharey=True, figsize=(6, 3), dpi=100)
-        one(zz[pop].T, ax,  title + '', hue,alpha)
+        one(zz.T, ax,  title + '', hue,alpha)
         ax.set_title(ax.get_title() + ' ({} SNPs {})'.format(zz.shape[0], ''))
 
     @staticmethod
     def clusters(a,seq,i=None,reps=[1,2,3],ss=300,pop=['H'],allpops=False):
         if allpops: pop=list('HCL')
         if len(a.columns.names)<2:
-            a=Trajectory.aug(a)
+            a=htl.aug(a)
             reps=[1];pop=['H']
         if i is not None:
             seq=map(lambda x: utl.mask(x, i), seq)
